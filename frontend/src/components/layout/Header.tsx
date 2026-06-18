@@ -9,6 +9,7 @@ import { useSocket } from '@/hooks/useSocket'
 import { useHealth, useFavicon } from '@/hooks'
 import { cn } from '@/lib/utils'
 import ThemeToggle from '@/components/ThemeToggle'
+import MascotLogo from '@/components/layout/MascotLogo'
 
 export default function Header() {
   const { isConnected } = useSocket()
@@ -24,11 +25,12 @@ export default function Header() {
     <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          {/* Logo and Title */}
-          <Link to="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">SD</span>
-            </div>
+          {/* Logo and Title — the mascot's headlamp LED reflects overall health */}
+          <Link to="/" className="flex items-center gap-2 group">
+            <MascotLogo
+              status={health ? health.status : 'unknown'}
+              className="w-9 h-9 shrink-0 transition-transform group-hover:scale-105"
+            />
             <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
               StatShed
             </h1>

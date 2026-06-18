@@ -75,4 +75,32 @@
   .animate-pulse-slow {
     animation: var(--animate-pulse-slow);
   }
+
+  /* AIDEV-NOTE: Mascot headlamp "breathing" pulse, shown while jobs are in progress
+     (see MascotLogo). transform-box: fill-box keeps the scale centered on the LED
+     regardless of SVG user coordinates. Disabled under reduced-motion. */
+  .animate-mascot-pulse {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: mascot-pulse 1.8s ease-in-out infinite;
+  }
+}
+
+@keyframes mascot-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-mascot-pulse {
+    animation: none;
+    opacity: 0.35;
+  }
 }
