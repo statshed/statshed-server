@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Favicon is dynamically set by useFavicon hook based on health status -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>StatShed</title>
+    <!--
+      AIDEV-NOTE: Pre-hydration theme bootstrap. Applies the persisted dark-mode
+      preference BEFORE first paint to avoid a light-theme flash (FOUC) before
+      ThemeProvider's effect runs. Keep in sync with ThemeContext (STORAGE_KEY
+      'statshed-theme' and the resolution rules). This inline script is allowlisted
+      in the production CSP by a sha256 hash in nginx.conf.template — if you edit
+      the script, recompute the hash (instructions in that file).
+    -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('statshed-theme') || 'system'
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+          if (t === 'dark' || (t === 'system' && prefersDark)) {
+            document.documentElement.classList.add('dark')
+          }
+        } catch (e) {
+          /* localStorage unavailable (private mode, etc.) — fall back to light. */
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

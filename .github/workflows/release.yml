@@ -1,0 +1,114 @@
+# Release pipeline. Pushing a semver tag (e.g. v0.1.0) builds multi-arch Docker
+# images for the backend and frontend, pushes them to GitHub Container Registry
+# (ghcr.io/statshed/*), and publishes a GitHub Release with a ready-to-run compose
+# file so users can `docker compose up` without building from source.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write # create the GitHub Release
+  packages: write # push images to GHCR
+
+jobs:
+  images:
+    name: Build & push ${{ matrix.name }} image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: backend
+            context: ./backend
+            image: ghcr.io/statshed/statshed-backend
+            build_args: ''
+          - name: frontend
+            context: ./frontend
+            image: ghcr.io/statshed/statshed-frontend
+            # Empty -> same-origin bundle; nginx proxies to the backend at runtime.
+            build_args: 'VITE_BACKEND_URL='
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata (tags & labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ matrix.image }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ matrix.build_args }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    name: Publish GitHub Release
+    needs: images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The release ships the image-based compose under the canonical filename so
+      # users can run `docker compose up` against it directly.
+      - name: Stage release assets
+        run: |
+          mkdir -p release
+          cp docker-compose.release.yml release/docker-compose.yml
+          cp .env.example release/.env.example
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release/docker-compose.yml
+            release/.env.example
+          body: |
+            ## StatShed ${{ github.ref_name }}
+
+            Multi-arch container images (`linux/amd64`, `linux/arm64`):
+
+            - `ghcr.io/statshed/statshed-backend:${{ github.ref_name }}`
+            - `ghcr.io/statshed/statshed-frontend:${{ github.ref_name }}`
+
+            ### Run it
+
+            Download the attached `docker-compose.yml` and `.env.example`, then:
+
+            ```bash
+            cp .env.example .env        # set SECRET_KEY (openssl rand -hex 32)
+            STATSHED_VERSION=${{ github.ref_name }} docker compose up -d
+            ```
+
+            Open <http://localhost:7827>.

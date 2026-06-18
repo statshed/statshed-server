@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true,
+
+    /* AIDEV-NOTE: Node/tooling + e2e are type-checked here (the app's strict
+       config covers only src/). Adding @types/node gives the build/test configs
+       process/__dirname/etc.; the e2e specs and fixtures get checked against the
+       app's types via their relative `../../src/types` imports. */
+    "types": ["node"]
+  },
+  "include": ["vite.config.ts", "vitest.config.ts", "playwright.config.ts", "e2e"]
+}

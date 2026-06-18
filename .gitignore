@@ -1,0 +1,46 @@
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Python (backend)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+ENV/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# SQLite
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Node / frontend
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+*.tsbuildinfo
+npm-debug.log*
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# AI / tooling scratch
+.codex/
+.remember/

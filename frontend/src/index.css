@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+/*
+ * AIDEV-NOTE: Tailwind CSS v4 configuration
+ * Uses CSS-first approach with @theme directive
+ * Dark mode uses class strategy for manual toggle support
+ * The @custom-variant enables class-based dark mode (requires 'dark' class on <html>)
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+@theme {
+  /* Custom color palette for StatShed */
+  --color-primary-50: #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-200: #bfdbfe;
+  --color-primary-300: #93c5fd;
+  --color-primary-400: #60a5fa;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+  --color-primary-700: #1d4ed8;
+  --color-primary-800: #1e40af;
+  --color-primary-900: #1e3a8a;
+  --color-primary-950: #172554;
+
+  /* Status colors */
+  --color-success-50: #f0fdf4;
+  --color-success-100: #dcfce7;
+  --color-success-200: #bbf7d0;
+  --color-success-500: #22c55e;
+  --color-success-600: #16a34a;
+  --color-success-700: #15803d;
+  --color-success-800: #166534;
+  --color-success-900: #14532d;
+
+  --color-error-50: #fef2f2;
+  --color-error-100: #fee2e2;
+  --color-error-200: #fecaca;
+  --color-error-500: #ef4444;
+  --color-error-600: #dc2626;
+  --color-error-700: #b91c1c;
+  --color-error-800: #991b1b;
+  --color-error-900: #7f1d1d;
+
+  --color-warning-50: #fffbeb;
+  --color-warning-100: #fef3c7;
+  --color-warning-200: #fde68a;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+  --color-warning-700: #b45309;
+  --color-warning-800: #92400e;
+  --color-warning-900: #78350f;
+
+  /* Animation durations */
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Base layer customizations */
+@layer base {
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100;
+    @apply min-h-screen;
+  }
+
+  /* Focus ring defaults */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-primary-500;
+  }
+}
+
+/* Custom component utilities */
+@layer utilities {
+  .animate-pulse-slow {
+    animation: var(--animate-pulse-slow);
+  }
+}

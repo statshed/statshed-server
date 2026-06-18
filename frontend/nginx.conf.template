@@ -1,0 +1,92 @@
+# AIDEV-NOTE: Nginx configuration template for StatShed frontend SPA
+# - Serves static files from /usr/share/nginx/html
+# - Falls back to index.html for client-side routing
+# - Proxies /api and /socket.io to backend (set BACKEND_URL env var)
+#
+# This is a template file - envsubst replaces ${BACKEND_URL} at container startup
+# NGINX_ENVSUBST_FILTER in Dockerfile ensures only BACKEND_URL is substituted
+
+server {
+    listen 80;
+    server_name localhost;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # AIDEV-NOTE: Security headers, sent on every response (`always` covers error
+    # responses too). The CSP is tuned to this SPA: it loads only same-origin assets,
+    # uses a data: SVG favicon (img-src data:), React inline styles (style-src
+    # 'unsafe-inline'), and talks same-origin to /api and the /socket.io WebSocket
+    # (connect-src 'self').
+    #
+    # script-src allows 'self' (the bundled module) plus a sha256 hash of the inline
+    # pre-hydration theme bootstrap in index.html. If you edit that <script>, recompute:
+    #   npm run build && node -e 'const f=require("fs"),c=require("crypto");\
+    #     const m=f.readFileSync("dist/index.html","utf8").match(/<script>([\s\S]*?)<\/script>/);\
+    #     console.log("sha256-"+c.createHash("sha256").update(m[1]).digest("base64"))'
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-7XUvd2lh/AE0pEp1W/qIkAQfU1nZDBEYKp8MFD3USaI='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_proxied any;
+    gzip_types text/plain text/css text/xml text/javascript application/javascript application/json application/xml;
+
+    # Proxy API requests to backend
+    location /api/ {
+        proxy_pass ${BACKEND_URL}/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Proxy WebSocket connections
+    # AIDEV-NOTE: WebSocket proxying requires longer timeouts and no buffering
+    # Default nginx timeout (60s) will disconnect idle WebSocket connections
+    location /socket.io/ {
+        proxy_pass ${BACKEND_URL}/socket.io/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket-specific settings
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+        proxy_connect_timeout 60s;
+        proxy_buffering off;
+    }
+
+    # Cache static assets
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        # AIDEV-NOTE: nginx add_header inheritance is all-or-nothing per block — a
+        # location with ANY add_header drops the server-level ones, so the security
+        # headers must be repeated here. nosniff in particular matters for JS/CSS.
+        add_header X-Frame-Options "DENY" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        try_files $uri =404;
+    }
+
+    # SPA fallback - serve index.html for all routes
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Health check endpoint
+    location /health {
+        access_log off;
+        return 200 "OK";
+        add_header Content-Type text/plain;
+    }
+}

@@ -1,0 +1,67 @@
+# StatShed — full stack, built from source.
+#
+# Starts the backend (Flask REST API + Socket.IO) and the frontend (React SPA
+# served by nginx, which reverse-proxies /api and /socket.io to the backend).
+# Because the browser only ever talks to the frontend origin, no CORS setup is
+# needed in this bundled deployment.
+#
+#   cp .env.example .env        # then set SECRET_KEY
+#   docker compose up --build -d
+#   open http://localhost:7827
+#
+# To run a tagged release WITHOUT building locally, use docker-compose.release.yml
+# (it pulls prebuilt images from ghcr.io/statshed).
+
+services:
+  backend:
+    build: ./backend
+    image: statshed-backend:local
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-sqlite:////data/statshed.db}
+      - SECRET_KEY=${SECRET_KEY:-}
+      - DEBUG=${DEBUG:-false}
+      # Unused in the bundled setup (same-origin via nginx); honored if you expose
+      # the backend port to a browser on a different origin.
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:7827}
+    ports:
+      # Exposed so CLI clients (statshed) can POST job status directly to the API.
+      - "${BACKEND_PORT:-7828}:7828"
+    volumes:
+      - statshed-data:/data
+    restart: unless-stopped
+    healthcheck:
+      # 127.0.0.1 (not localhost): busybox/curl in the container may resolve
+      # localhost to ::1, but the servers listen on IPv4 only.
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:7828/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Empty on purpose: the browser uses same-origin and nginx proxies to the
+        # backend (BACKEND_URL below). Never bake a localhost URL into the bundle.
+        VITE_BACKEND_URL: ""
+    image: statshed-frontend:local
+    environment:
+      - BACKEND_URL=http://backend:7828
+    ports:
+      - "${FRONTEND_PORT:-7827}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      # 127.0.0.1 (not localhost): nginx listens on IPv4, but busybox wget may
+      # try ::1 first and get connection-refused.
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  statshed-data:
