@@ -160,9 +160,7 @@ class TestExpirationChecker:
         from models import Job
 
         # Create a job with error status
-        client.post(
-            "/status", json={"group": "test", "job": "job1", "status": "error"}
-        )
+        client.post("/status", json={"group": "test", "job": "job1", "status": "error"})
 
         # Manually set expires_at to be in the past
         job = db_session.query(Job).filter_by(name="job1").first()
@@ -183,9 +181,7 @@ class TestExpirationChecker:
         from models import Job
 
         # Create a job with stale status
-        client.post(
-            "/status", json={"group": "test", "job": "job1", "status": "stale"}
-        )
+        client.post("/status", json={"group": "test", "job": "job1", "status": "stale"})
 
         # Manually set expires_at to be in the past
         job = db_session.query(Job).filter_by(name="job1").first()
@@ -206,9 +202,7 @@ class TestExpirationChecker:
         from models import Job
 
         # Create a job with error status and ack it
-        client.post(
-            "/status", json={"group": "test", "job": "job1", "status": "error"}
-        )
+        client.post("/status", json={"group": "test", "job": "job1", "status": "error"})
         job = db_session.query(Job).filter_by(name="job1").first()
         job_id = job.id
         client.post(f"/jobs/{job_id}/ack")
@@ -273,9 +267,7 @@ class TestExpirationChecker:
         import time
 
         time.sleep(1.0)
-        client.post(
-            "/status", json={"group": "test", "job": "job1", "status": "error"}
-        )
+        client.post("/status", json={"group": "test", "job": "job1", "status": "error"})
 
         # Verify expires_at was refreshed (re-query for fresh state)
         db_session.expire_all()
@@ -345,9 +337,7 @@ class TestHealthUpdateEmit:
         from background import run_timeout_check
         from models import Job
 
-        client.post(
-            "/status", json={"group": "test", "job": "j", "status": "progress"}
-        )
+        client.post("/status", json={"group": "test", "job": "j", "status": "progress"})
         job = db_session.query(Job).filter_by(name="j").first()
         job.updated_at = datetime.now(UTC) - timedelta(minutes=10)
         db_session.commit()
@@ -365,9 +355,7 @@ class TestHealthUpdateEmit:
         from background import run_timeout_check
         from models import Group, Job
 
-        client.post(
-            "/status", json={"group": "test", "job": "j", "status": "success"}
-        )
+        client.post("/status", json={"group": "test", "job": "j", "status": "success"})
         group = db_session.query(Group).filter_by(name="test").first()
         group.staleness_enabled = True
         db_session.commit()
@@ -393,9 +381,7 @@ class TestHealthUpdateEmit:
         client.post(
             "/status", json={"group": "g1", "job": "prog", "status": "progress"}
         )
-        client.post(
-            "/status", json={"group": "g2", "job": "succ", "status": "success"}
-        )
+        client.post("/status", json={"group": "g2", "job": "succ", "status": "success"})
         g2 = db_session.query(Group).filter_by(name="g2").first()
         g2.staleness_enabled = True
         db_session.commit()
@@ -420,9 +406,7 @@ class TestHealthUpdateEmit:
     def test_no_transitions_emits_no_health_update(self, client, db_session):
         from background import run_timeout_check
 
-        client.post(
-            "/status", json={"group": "test", "job": "j", "status": "progress"}
-        )
+        client.post("/status", json={"group": "test", "job": "j", "status": "progress"})
 
         sock = _RecordingSocketIO()
         run_timeout_check(db_session, sock)

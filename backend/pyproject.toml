@@ -29,7 +29,16 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "B", "UP"]
-ignore = []
+# E501 (line length) is enforced for code by `ruff format`; the only remaining hits
+# are long comments / docstrings / string literals the formatter intentionally leaves
+# alone (including single-line AIDEV-NOTE anchors, which must stay greppable). Don't
+# fail lint on those.
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Alembic's env.py imports the app's models after configuring the migration
+# environment; that ordering is intentional, so allow the late (E402) import.
+"alembic/env.py" = ["E402"]
 
 [tool.ruff.format]
 quote-style = "double"
