@@ -12,7 +12,7 @@
  */
 import { useId } from 'react'
 import { cn } from '@/lib/utils'
-import { HEALTH_STATUS_COLORS, HEALTH_STATUS_LABELS } from '@/lib/constants'
+import { HEALTH_STATUS_COLORS } from '@/lib/constants'
 import type { HealthStatus } from '@/types'
 
 // 'unknown' covers the window before /health has loaded (grey lamp — never green,
@@ -24,11 +24,6 @@ const LED_COLOR_CLASS: Record<MascotStatus, string> = {
   unknown: 'text-gray-400',
 }
 
-const LED_LABEL: Record<MascotStatus, string> = {
-  ...HEALTH_STATUS_LABELS,
-  unknown: 'Status unavailable',
-}
-
 interface MascotLogoProps {
   status: MascotStatus
   className?: string
@@ -37,18 +32,21 @@ interface MascotLogoProps {
 export default function MascotLogo({ status, className }: MascotLogoProps) {
   // Unique filter id per instance so multiple mascots can't collide.
   const glowId = useId().replace(/:/g, '')
-  const label = `StatShed — ${LED_LABEL[status]}`
 
+  // AIDEV-NOTE: Decorative (aria-hidden). The adjacent "StatShed" text labels the
+  // header link, and overall status is conveyed by the lamp color plus the link's
+  // title tooltip (set in Header), the connection pill, and the favicon. Keeping the
+  // SVG out of the a11y tree also avoids a second "StatShed" text node that would
+  // break the e2e getByText('StatShed') header assertion.
   return (
     <svg
       viewBox="0 0 48 48"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      role="img"
-      aria-label={label}
+      aria-hidden="true"
+      focusable="false"
       className={cn('text-slate-700 dark:text-slate-200', className)}
     >
-      <title>{label}</title>
       <defs>
         <filter id={glowId} x="-120%" y="-120%" width="340%" height="340%">
           <feGaussianBlur stdDeviation="1.6" result="b" />

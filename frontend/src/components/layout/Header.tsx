@@ -8,6 +8,7 @@ import { Settings, Wifi, WifiOff } from 'lucide-react'
 import { useSocket } from '@/hooks/useSocket'
 import { useHealth, useFavicon } from '@/hooks'
 import { cn } from '@/lib/utils'
+import { HEALTH_STATUS_LABELS } from '@/lib/constants'
 import ThemeToggle from '@/components/ThemeToggle'
 import MascotLogo from '@/components/layout/MascotLogo'
 
@@ -26,7 +27,11 @@ export default function Header() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo and Title — the mascot's headlamp LED reflects overall health */}
-          <Link to="/" className="flex items-center gap-2 group">
+          <Link
+            to="/"
+            className="flex items-center gap-2 group"
+            title={`StatShed — ${health ? HEALTH_STATUS_LABELS[health.status] : 'Status unavailable'}`}
+          >
             <MascotLogo
               status={health ? health.status : 'unknown'}
               className="w-9 h-9 shrink-0 transition-transform group-hover:scale-105"
