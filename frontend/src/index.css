@@ -76,31 +76,32 @@
     animation: var(--animate-pulse-slow);
   }
 
-  /* AIDEV-NOTE: Mascot headlamp "breathing" pulse, shown while jobs are in progress
-     (see MascotLogo). transform-box: fill-box keeps the scale centered on the LED
-     regardless of SVG user coordinates. Disabled under reduced-motion. */
-  .animate-mascot-pulse {
+  /* AIDEV-NOTE: Mascot headlamp "ping" — a ring that expands outward from the lamp while
+     jobs are in progress (see MascotLogo). transform-box: fill-box centers the scale on the
+     ring regardless of SVG user coordinates. Under reduced-motion it rests as a static faint
+     halo (see below) instead of animating. */
+  .animate-mascot-ping {
     transform-box: fill-box;
     transform-origin: center;
-    animation: mascot-pulse 1.8s ease-in-out infinite;
+    animation: mascot-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
   }
 }
 
-@keyframes mascot-pulse {
-  0%,
-  100% {
+@keyframes mascot-ping {
+  0% {
     transform: scale(1);
     opacity: 0.5;
   }
-  50% {
-    transform: scale(2);
+  70%,
+  100% {
+    transform: scale(1.9);
     opacity: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-mascot-pulse {
+  .animate-mascot-ping {
     animation: none;
-    opacity: 0.35;
+    opacity: 0.4;
   }
 }
