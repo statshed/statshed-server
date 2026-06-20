@@ -101,9 +101,10 @@ func healthFromCounts(total, unhealthy, inProgress int) string {
 	}
 }
 
-// JobFilter selects and pages jobs for GET /api/jobs.
+// JobFilter selects and pages jobs for GET /api/jobs and /api/groups/<name>/jobs.
 type JobFilter struct {
 	Statuses []string // empty -> no status filter
+	GroupID  *int     // nil -> all groups
 	Limit    *int     // nil -> no limit (return all)
 	Offset   int
 }
@@ -119,7 +120,7 @@ type JobList struct {
 // the full matching count; on the default (no limit, no offset) path it is len(jobs) with
 // NO extra COUNT query (spec §5.1).
 func (s *Store) ListJobs(ctx context.Context, f JobFilter) (JobList, error) {
-	where, whereArgs := statusWhere(f.Statuses)
+	where, whereArgs := f.where()
 
 	query := "SELECT " + jobColumns + " " + jobFrom + where +
 		" ORDER BY j.updated_at DESC, j.id DESC"
@@ -165,16 +166,24 @@ func (s *Store) ListJobs(ctx context.Context, f JobFilter) (JobList, error) {
 	return JobList{Jobs: jobs, Total: total}, nil
 }
 
-// statusWhere builds a `WHERE j.status IN (...)` clause (empty when no statuses).
-func statusWhere(statuses []string) (string, []any) {
-	if len(statuses) == 0 {
+// where builds the WHERE clause (and args) for the group_id and status filters.
+func (f JobFilter) where() (string, []any) {
+	var conds []string
+	var args []any
+	if f.GroupID != nil {
+		conds = append(conds, "j.group_id = ?")
+		args = append(args, *f.GroupID)
+	}
+	if len(f.Statuses) > 0 {
+		conds = append(conds, "j.status IN ("+placeholders(len(f.Statuses))+")")
+		for _, st := range f.Statuses {
+			args = append(args, st)
+		}
+	}
+	if len(conds) == 0 {
 		return "", nil
 	}
-	args := make([]any, len(statuses))
-	for i, st := range statuses {
-		args[i] = st
-	}
-	return " WHERE j.status IN (" + placeholders(len(statuses)) + ")", args
+	return " WHERE " + strings.Join(conds, " AND "), args
 }
 
 func placeholders(n int) string {
