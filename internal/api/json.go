@@ -29,6 +29,22 @@ func decodeJSONObject(w http.ResponseWriter, r *http.Request) (map[string]any, b
 	return m, true
 }
 
+// intPtrOrNil renders a nullable int as the value or JSON null.
+func intPtrOrNil(p *int) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
+// intPtrEqual reports whether two nullable ints are equal (both nil counts as equal).
+func intPtrEqual(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
 // asConfigInt converts a decoded JSON value to an int, accepting only a whole-number JSON
 // number (rejecting bool/string/fractional) — the equivalent of Python's is_valid_int
 // (an int that is not a bool). ok=false means the value is not a valid integer.

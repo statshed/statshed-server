@@ -47,6 +47,8 @@ func NewRouter(cfg config.Config, st *store.Store) http.Handler {
 		apiRouter.Get("/groups/{name}/jobs", h.getGroupJobs)
 		apiRouter.Get("/config", h.getConfig)
 		apiRouter.Put("/config", h.updateConfig)
+		apiRouter.Get("/groups/{name}/config", h.getGroupConfig)
+		apiRouter.Put("/groups/{name}/config", h.updateGroupConfig)
 		// Unknown /api/* paths get the JSON 404 envelope (never SPA HTML).
 		apiRouter.NotFound(jsonNotFound)
 		apiRouter.MethodNotAllowed(jsonMethodNotAllowed)

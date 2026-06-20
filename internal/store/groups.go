@@ -4,7 +4,58 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 )
+
+// GroupConfigPatch is a partial group-config update. A *Set flag includes that column in
+// the UPDATE; a nil pointer for an included column sets NULL (clears the override).
+type GroupConfigPatch struct {
+	Progress      *int
+	ProgressSet   bool
+	Staleness     *int
+	StalenessSet  bool
+	Expiration    *int
+	ExpirationSet bool
+	Enabled       *bool // nil = leave staleness_enabled unchanged
+}
+
+// SetGroupConfig applies the patch to the group row.
+func (s *Store) SetGroupConfig(ctx context.Context, groupID int, p GroupConfigPatch) error {
+	var sets []string
+	var args []any
+	if p.ProgressSet {
+		sets = append(sets, "progress_timeout_minutes = ?")
+		args = append(args, p.Progress)
+	}
+	if p.StalenessSet {
+		sets = append(sets, "staleness_timeout_hours = ?")
+		args = append(args, p.Staleness)
+	}
+	if p.ExpirationSet {
+		sets = append(sets, "expiration_timeout_hours = ?")
+		args = append(args, p.Expiration)
+	}
+	if p.Enabled != nil {
+		sets = append(sets, "staleness_enabled = ?")
+		args = append(args, boolInt(*p.Enabled))
+	}
+	if len(sets) == 0 {
+		return nil
+	}
+	args = append(args, groupID)
+	_, err := s.write.ExecContext(ctx,
+		"UPDATE groups SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...)
+	return err
+}
+
+// CascadeGroupExpiration refreshes expires_at for this group's jobs (group-config change).
+func (s *Store) CascadeGroupExpiration(ctx context.Context, groupID, hours int) error {
+	_, err := s.write.ExecContext(ctx,
+		"UPDATE jobs SET expires_at = datetime(updated_at, ?) WHERE group_id = ?",
+		fmt.Sprintf("+%d hours", hours), groupID)
+	return err
+}
 
 // ListGroups returns every group (including zero-job groups) with its aggregate health
 // counts, computed N+1-free in a bounded number of queries (one per group + three grouped
