@@ -107,6 +107,28 @@ func TestBodyLimitReturns413(t *testing.T) {
 	}
 }
 
+func TestBodyLimit413CarriesCORSHeaders(t *testing.T) {
+	srv := httptest.NewServer(testRouter(t))
+	defer srv.Close()
+
+	oversized := make([]byte, config.MaxContentLength+1024)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/status", bytes.NewReader(oversized))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", allowedOrigin)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413", resp.StatusCode)
+	}
+	// CORS must be present on the error response (flask_cors applies it to errors).
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != allowedOrigin {
+		t.Errorf("413 Access-Control-Allow-Origin = %q, want %q", got, allowedOrigin)
+	}
+}
+
 func TestCORSReflectsAllowedOrigin(t *testing.T) {
 	srv := httptest.NewServer(testRouter(t))
 	defer srv.Close()

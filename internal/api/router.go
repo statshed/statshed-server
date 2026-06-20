@@ -30,7 +30,6 @@ func NewRouter(cfg config.Config, st *store.Store) http.Handler {
 	r.Use(recoverer)
 	r.Use(securityHeaders)
 	r.Use(gzipResponses)
-	r.Use(bodyLimit(config.MaxContentLength))
 
 	jsonNotFound := func(w http.ResponseWriter, _ *http.Request) {
 		writeHTTPError(w, http.StatusNotFound, "Not found")
@@ -40,7 +39,11 @@ func NewRouter(cfg config.Config, st *store.Store) http.Handler {
 	}
 
 	r.Route("/api", func(apiRouter chi.Router) {
+		// CORS before the body limit, so an over-limit 413 to an allowed Origin still
+		// carries the CORS headers (flask_cors applies CORS to error responses too). The
+		// limit lives here because only /api has request bodies.
 		apiRouter.Use(corsMiddleware(cfg.CORSOrigins))
+		apiRouter.Use(bodyLimit(config.MaxContentLength))
 		apiRouter.Get("/health", h.health)
 		apiRouter.Post("/status", h.postStatus)
 		apiRouter.Get("/jobs", h.listJobs)
