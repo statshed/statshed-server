@@ -9,17 +9,26 @@ intended for internal/localhost use only. See the design doc section
 use a reverse proxy with authentication.
 """
 
+import os
 import re
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
-from flask import Blueprint, Flask, jsonify, request
+from flask import (
+    Blueprint,
+    Flask,
+    Response,
+    abort,
+    jsonify,
+    request,
+    send_from_directory,
+)
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import contains_eager, defer
-from werkzeug.exceptions import HTTPException
+from werkzeug.exceptions import HTTPException, NotFound
 
 from background import start_timeout_checker
 from config import Config
@@ -1872,6 +1881,37 @@ def admin_cleanup():
 # =============================================================================
 # Main Entry Point
 # =============================================================================
+
+
+# AIDEV-NOTE: In the unified image Flask serves the built React SPA from
+# STATIC_DIR (the Vite dist/, copied to ./static by the Dockerfile). Registered
+# only when the dir exists, so local dev (`python app.py`, Vite serves the SPA on
+# its own port) is unaffected. /api/* and /socket.io are never served as the SPA.
+def register_spa(app: Flask, static_dir: str) -> None:
+    """Serve the SPA from static_dir with history-API (index.html) fallback."""
+
+    @app.route("/", defaults={"path": ""})
+    @app.route("/<path:path>")
+    def serve_spa(path: str) -> Response:
+        if path.startswith("api/"):
+            abort(404)  # unknown API path -> JSON 404 via errorhandler, not SPA
+        if path:
+            try:
+                resp = send_from_directory(static_dir, path)
+                resp.headers["Cache-Control"] = "public, immutable, max-age=31536000"
+                return resp
+            except NotFound:
+                pass  # client-side route -> fall through to index.html
+        resp = send_from_directory(static_dir, "index.html")
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
+_STATIC_DIR: str = os.environ.get("STATIC_DIR") or os.path.join(
+    os.path.dirname(__file__), "static"
+)
+if os.path.isdir(_STATIC_DIR):
+    register_spa(app, _STATIC_DIR)
 
 # AIDEV-NOTE: Register the API under /api. Must come after all @api.route defs.
 app.register_blueprint(api, url_prefix="/api")
