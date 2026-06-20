@@ -22,9 +22,9 @@ export default defineConfig(({ mode }) => ({
     port: 7827,
     proxy: {
       '/api': {
+        // AIDEV-NOTE: No rewrite — the backend serves the REST API under /api (app.py Blueprint), so forward /api/* unchanged.
         target: 'http://localhost:7828',
         changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/api/, ''),
       },
       '/socket.io': {
         target: 'http://localhost:7828',
