@@ -1916,6 +1916,36 @@ if os.path.isdir(_STATIC_DIR):
 # AIDEV-NOTE: Register the API under /api. Must come after all @api.route defs.
 app.register_blueprint(api, url_prefix="/api")
 
+# AIDEV-NOTE: Security headers ported verbatim from the old nginx.conf.template
+# (sent on every response, matching nginx's `always`). The CSP is tuned to this
+# SPA; the script-src sha256 allowlists the inline pre-hydration theme bootstrap
+# in index.html. If you edit that <script>, recompute the hash:
+#   npm run build && node -e 'const f=require("fs"),c=require("crypto");\
+#     const m=f.readFileSync("dist/index.html","utf8").match(/<script>([\s\S]*?)<\/script>/);\
+#     console.log("sha256-"+c.createHash("sha256").update(m[1]).digest("base64"))'
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'sha256-7XUvd2lh/AE0pEp1W/qIkAQfU1nZDBEYKp8MFD3USaI='; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "font-src 'self'; "
+    "connect-src 'self'; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "frame-ancestors 'none'; "
+    "form-action 'self'"
+)
+
+
+@app.after_request
+def set_security_headers(response: Response) -> Response:
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = _CSP
+    return response
+
+
 if __name__ == "__main__":
     # AIDEV-NOTE: Dev-server convenience only — create tables from the models so
     # `python app.py` works against a fresh DB without running migrations first.
