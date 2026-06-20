@@ -6,7 +6,7 @@ COMPOSE ?= docker compose
 .DEFAULT_GOAL := help
 .RECIPEPREFIX := >
 
-.PHONY: help up down logs build dev-backend dev-frontend test test-backend test-frontend e2e
+.PHONY: help up down logs build dev-backend dev-frontend test test-backend test-frontend e2e contract-test
 
 help: ## Show available targets
 > @grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -39,3 +39,12 @@ test-frontend: ## Run frontend unit tests (vitest)
 
 e2e: ## Run frontend end-to-end tests (Playwright)
 > cd frontend && npm run test:e2e
+
+# AIDEV-NOTE: The shared HTTP contract suite (spec.md 8). runner.py boots a server
+# (Python or Go) on a fresh DB under a config profile, runs the suite over HTTP, then
+# tears it down. The same assertions run against both servers. The early gates
+# (impl-guide Task 1.5 / Phase 3 / Task 6.1) invoke this; Task 7.2 adapts it for the Go
+# Makefile. Everything after `--` is passed to pytest.
+contract-test: ## Run the contract suite (TARGET=python|go [PROFILE=<name>] [K=<expr>])
+> @test -n "$(TARGET)" || { echo "Usage: make contract-test TARGET=python|go [PROFILE=<name>] [K=<expr>]"; exit 2; }
+> cd contract && uv run python runner.py --target $(TARGET) $(if $(PROFILE),--profile $(PROFILE)) -- $(if $(K),-k "$(K)")
