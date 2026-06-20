@@ -26,14 +26,23 @@ htmlcov/
 
 # Go (statshed-server)
 /statshed-server
-# Built SPA embedded into the binary. A committed placeholder under this dir is
-# re-exempted in Task 3.10 (negate the dir first, then the placeholder files) so
-# //go:embed always compiles.
-internal/staticfs/dist/
+# (The embedded-SPA placeholder re-includes live in the Node section below, AFTER the
+# broad `dist/` rule, so they actually take effect — I9.)
 
 # Node / frontend
 node_modules/
 dist/
+# Re-include the committed embedded-SPA placeholder that the `dist/` rule above would
+# otherwise ignore. Order matters: the dir negation comes first, then ignore the built
+# children, then re-include the placeholder files. `make prepare-static` overwrites these
+# with the real React build (a local-only change); the placeholder keeps //go:embed
+# compiling on a fresh checkout (I9).
+!internal/staticfs/dist/
+internal/staticfs/dist/*
+!internal/staticfs/dist/index.html
+!internal/staticfs/dist/assets/
+internal/staticfs/dist/assets/*
+!internal/staticfs/dist/assets/.gitkeep
 coverage/
 test-results/
 playwright-report/

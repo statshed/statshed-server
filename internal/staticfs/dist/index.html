@@ -1,0 +1,17 @@
+<!doctype html>
+<!--
+  AIDEV-NOTE: Committed PLACEHOLDER so //go:embed dist always compiles (I9). The real
+  React SPA build replaces this whole dist/ directory via `make prepare-static` (used by
+  the Dockerfile, the release binaries job, and local UI dev). This file is never the
+  served SPA in production or in the contract suite's with_spa profile (which overrides
+  STATIC_DIR with a real dist). See internal/staticfs/spa.go.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>StatShed</title>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

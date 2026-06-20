@@ -6,7 +6,7 @@ COMPOSE ?= docker compose
 .DEFAULT_GOAL := help
 .RECIPEPREFIX := >
 
-.PHONY: help up down logs build dev-backend dev-frontend test test-backend test-frontend e2e contract-test
+.PHONY: help up down logs build dev-backend dev-frontend test test-backend test-frontend e2e contract-test prepare-static
 
 help: ## Show available targets
 > @grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -48,3 +48,12 @@ e2e: ## Run frontend end-to-end tests (Playwright)
 contract-test: ## Run the contract suite (TARGET=python|go [PROFILE=<name>] [K=<expr>])
 > @test -n "$(TARGET)" || { echo "Usage: make contract-test TARGET=python|go [PROFILE=<name>] [K=<expr>]"; exit 2; }
 > cd contract && uv run python runner.py --target $(TARGET) $(if $(PROFILE),--profile $(PROFILE)) -- $(if $(K),-k "$(K)")
+
+# AIDEV-NOTE: Build the real React SPA into internal/staticfs/dist so the Go binary embeds
+# it (I9). Overwrites the committed placeholder (a local-only change; not committed). The
+# frontend build runs in a subshell so the rm/mkdir/cp stay rooted at the repo root.
+prepare-static: ## Build the SPA into internal/staticfs/dist (embedded by the Go binary)
+> (cd frontend && npm ci && npm run build)
+> rm -rf internal/staticfs/dist
+> mkdir -p internal/staticfs/dist
+> cp -R frontend/dist/. internal/staticfs/dist/

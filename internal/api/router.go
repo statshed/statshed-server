@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/statshed/statshed-server/internal/config"
+	"github.com/statshed/statshed-server/internal/staticfs"
 	"github.com/statshed/statshed-server/internal/store"
 )
 
@@ -61,7 +62,13 @@ func NewRouter(cfg config.Config, st *store.Store) http.Handler {
 		apiRouter.MethodNotAllowed(jsonMethodNotAllowed)
 	})
 
-	r.NotFound(jsonNotFound)
+	// Non-/api paths fall through here: serve the SPA when enabled (D9), else JSON 404.
+	// Unknown /api/* paths are handled by the subrouter above and never reach this.
+	if spa := staticfs.Handler(cfg.StaticDir, cfg.StaticDisabled); spa != nil {
+		r.NotFound(spa.ServeHTTP)
+	} else {
+		r.NotFound(jsonNotFound)
+	}
 	r.MethodNotAllowed(jsonMethodNotAllowed)
 
 	return r
