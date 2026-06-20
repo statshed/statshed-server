@@ -122,3 +122,24 @@ jobs:
           name: playwright-report
           path: frontend/playwright-report/
           retention-days: 7
+
+  smoke:
+    name: Unified image smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t statshed-server:ci .
+
+      - name: Run and probe
+        run: |
+          docker run --rm -d --name statshed-ci -p 7827:7828 -e SECRET_KEY=ci statshed-server:ci
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:7827/api/health; then ok=1; break; fi
+            sleep 2
+          done
+          test "${ok:-0}" = "1" || { docker logs statshed-ci; exit 1; }
+          curl -fsS http://127.0.0.1:7827/ | grep -q '<title>StatShed</title>'
+          docker rm -f statshed-ci
