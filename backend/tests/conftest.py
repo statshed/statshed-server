@@ -11,6 +11,7 @@ import sys
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 import pytest
+from flask.testing import FlaskClient
 
 
 @pytest.fixture(scope="function")
@@ -57,9 +58,48 @@ def app():
     models.engine = original_engine
 
 
+class _ApiPrefixClient(FlaskClient):
+    """Test client that transparently prepends /api to request paths.
+
+    AIDEV-NOTE: Production serves the REST API under an /api Blueprint so the
+    React SPA can own root (the /jobs *page* vs the GET /jobs *API*). The test
+    suite predates that split and addresses routes at root (/jobs, /status, ...).
+    This wrapper injects /api so those ~371 calls keep working unchanged. Paths
+    under /socket.io or already under /api are passed through untouched.
+    """
+
+    def open(self, *args, **kwargs):  # type: ignore[override]
+        path = None
+        pos = None
+        if args and isinstance(args[0], str):
+            path, pos = args[0], 0
+        elif isinstance(kwargs.get("path"), str):
+            path = kwargs["path"]
+        if (
+            path is not None
+            and path.startswith("/")
+            and not path.startswith("/api")
+            and not path.startswith("/socket.io")
+        ):
+            new = "/api" + path
+            if pos == 0:
+                args = (new,) + args[1:]
+            else:
+                kwargs["path"] = new
+        return super().open(*args, **kwargs)
+
+
 @pytest.fixture
 def client(app):
-    """Create a test client."""
+    """Test client that addresses the API at root (auto-prefixed to /api)."""
+    app.test_client_class = _ApiPrefixClient
+    return app.test_client()
+
+
+@pytest.fixture
+def raw_client(app):
+    """Test client with NO prefixing — for testing real URL routing/SPA."""
+    app.test_client_class = FlaskClient
     return app.test_client()
 
 

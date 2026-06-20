@@ -13,7 +13,7 @@ import re
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
-from flask import Flask, jsonify, request
+from flask import Blueprint, Flask, jsonify, request
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from sqlalchemy import func
@@ -54,6 +54,11 @@ socketio = SocketIO(
     ping_timeout=Config.PING_TIMEOUT,
     max_http_buffer_size=Config.MAX_HTTP_BUFFER_SIZE,
 )
+
+# AIDEV-NOTE: The REST API lives under an /api Blueprint so the unified image can
+# serve the React SPA at root without route collisions (e.g. the SPA's /jobs page
+# vs this API's GET /jobs). nginx used to strip /api; now Flask owns the prefix.
+api = Blueprint("api", __name__)
 
 # AIDEV-NOTE: Alembic is the single source of truth for the production schema
 # (entrypoint.sh runs `alembic upgrade head` before launching). We deliberately do
@@ -272,7 +277,7 @@ def handle_unexpected_exception(error: Exception):
 # =============================================================================
 
 
-@app.route("/health", methods=["GET"])
+@api.route("/health", methods=["GET"])
 def get_health():
     """Get overall health summary across all jobs.
 
@@ -381,7 +386,7 @@ def parse_pagination(args) -> tuple[int | None, int]:
     return limit, offset
 
 
-@app.route("/jobs", methods=["GET"])
+@api.route("/jobs", methods=["GET"])
 def get_jobs():
     """Get jobs filtered by status, with optional pagination.
 
@@ -484,7 +489,7 @@ def get_jobs():
 # =============================================================================
 
 
-@app.route("/jobs/<int:job_id>/ack", methods=["POST"])
+@api.route("/jobs/<int:job_id>/ack", methods=["POST"])
 def ack_job(job_id: int):
     """Acknowledge an error/timeout/stale job.
 
@@ -561,7 +566,7 @@ def ack_job(job_id: int):
 # =============================================================================
 
 
-@app.route("/jobs/<int:job_id>", methods=["DELETE"])
+@api.route("/jobs/<int:job_id>", methods=["DELETE"])
 def delete_job(job_id: int):
     """Delete a single job.
 
@@ -623,7 +628,7 @@ def delete_job(job_id: int):
     )
 
 
-@app.route("/groups/<name>/ack", methods=["POST"])
+@api.route("/groups/<name>/ack", methods=["POST"])
 def ack_group(name: str):
     """Acknowledge all errored/timed-out/stale jobs in a group.
 
@@ -697,7 +702,7 @@ def ack_group(name: str):
     )
 
 
-@app.route("/ack-all", methods=["POST"])
+@api.route("/ack-all", methods=["POST"])
 def ack_all():
     """Acknowledge all errored/timed-out/stale jobs globally.
 
@@ -751,7 +756,7 @@ def ack_all():
 # =============================================================================
 
 
-@app.route("/status", methods=["POST"])
+@api.route("/status", methods=["POST"])
 def post_status():
     """Submit or update a job status.
 
@@ -1023,7 +1028,7 @@ def post_status():
 # =============================================================================
 
 
-@app.route("/groups", methods=["GET"])
+@api.route("/groups", methods=["GET"])
 def get_groups():
     """List all groups with health summary.
 
@@ -1087,7 +1092,7 @@ def get_groups():
     return jsonify({"groups": result})
 
 
-@app.route("/groups/<name>/jobs", methods=["GET"])
+@api.route("/groups/<name>/jobs", methods=["GET"])
 def get_group_jobs(name: str):
     """Get jobs in a specific group, with optional pagination.
 
@@ -1162,7 +1167,7 @@ def get_group_jobs(name: str):
     return jsonify({"group": group.to_dict(), "jobs": jobs, "total": total})
 
 
-@app.route("/groups/<group_name>/jobs/<job_name>/log", methods=["GET"])
+@api.route("/groups/<group_name>/jobs/<job_name>/log", methods=["GET"])
 def get_job_log(group_name: str, job_name: str):
     """Retrieve log content for a specific job.
 
@@ -1264,7 +1269,7 @@ def get_job_log(group_name: str, job_name: str):
 # =============================================================================
 
 
-@app.route("/config", methods=["GET"])
+@api.route("/config", methods=["GET"])
 def get_config():
     """Get global configuration settings.
 
@@ -1291,7 +1296,7 @@ def get_config():
     )
 
 
-@app.route("/config", methods=["PUT"])
+@api.route("/config", methods=["PUT"])
 def update_config():
     """Update global configuration settings.
 
@@ -1397,7 +1402,7 @@ def update_config():
     return get_config()
 
 
-@app.route("/groups/<name>/config", methods=["GET"])
+@api.route("/groups/<name>/config", methods=["GET"])
 def get_group_config(name: str):
     """Get group-specific configuration overrides.
 
@@ -1466,7 +1471,7 @@ def get_group_config(name: str):
     )
 
 
-@app.route("/groups/<name>/config", methods=["PUT"])
+@api.route("/groups/<name>/config", methods=["PUT"])
 def update_group_config(name: str):
     """Update group-specific configuration overrides.
 
@@ -1643,7 +1648,7 @@ def update_group_config(name: str):
 # =============================================================================
 
 
-@app.route("/admin/stats", methods=["GET"])
+@api.route("/admin/stats", methods=["GET"])
 def get_admin_stats():
     """Get database statistics.
 
@@ -1696,7 +1701,7 @@ def get_admin_stats():
     )
 
 
-@app.route("/admin/cleanup", methods=["DELETE"])
+@api.route("/admin/cleanup", methods=["DELETE"])
 def admin_cleanup():
     """Trigger manual cleanup of old jobs.
 
@@ -1867,6 +1872,9 @@ def admin_cleanup():
 # =============================================================================
 # Main Entry Point
 # =============================================================================
+
+# AIDEV-NOTE: Register the API under /api. Must come after all @api.route defs.
+app.register_blueprint(api, url_prefix="/api")
 
 if __name__ == "__main__":
     # AIDEV-NOTE: Dev-server convenience only — create tables from the models so
