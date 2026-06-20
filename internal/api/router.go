@@ -49,6 +49,7 @@ func NewRouter(cfg config.Config, st *store.Store) http.Handler {
 		apiRouter.Post("/ack-all", h.ackAll)
 		apiRouter.Get("/groups", h.listGroups)
 		apiRouter.Get("/groups/{name}/jobs", h.getGroupJobs)
+		apiRouter.Get("/groups/{name}/jobs/{job}/log", h.getJobLog)
 		apiRouter.Get("/config", h.getConfig)
 		apiRouter.Put("/config", h.updateConfig)
 		apiRouter.Get("/groups/{name}/config", h.getGroupConfig)

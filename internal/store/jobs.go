@@ -2,8 +2,29 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"strings"
 )
+
+// JobLog loads a job's log_content (the one query that DOES select the blob). Returns
+// (content, jobFound): a nil content with jobFound=true means the job exists but has no log.
+func (s *Store) JobLog(ctx context.Context, groupID int, jobName string) (*string, bool, error) {
+	var content sql.NullString
+	err := s.read.QueryRowContext(ctx,
+		"SELECT log_content FROM jobs WHERE group_id = ? AND name = ?", groupID, jobName,
+	).Scan(&content)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if !content.Valid {
+		return nil, true, nil
+	}
+	return &content.String, true, nil
+}
 
 // ValidStatuses are the five job statuses, in canonical order (behavioral-map §5).
 var ValidStatuses = []string{"success", "error", "progress", "timeout", "stale"}
