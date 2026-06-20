@@ -11,9 +11,9 @@ import { ApiError } from '@/api/client'
  *
  * Build-time configuration via VITE_BACKEND_URL environment variable:
  * - If set: Uses the specified URL (for direct connections bypassing proxy)
- * - If not set: Uses empty string (same origin) so nginx can proxy requests
+ * - If not set: Uses empty string (same origin); the unified server serves /api + /socket.io
  *
- * In Docker/production: nginx proxies /socket.io and /api to BACKEND_URL
+ * In Docker/production: the single statshed-server image serves the SPA, /api, and /socket.io same-origin
  * In local dev: Set VITE_BACKEND_URL to connect directly, or use Vite's proxy
  */
 function getBackendUrl(): string {

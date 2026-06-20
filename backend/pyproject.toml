@@ -49,12 +49,12 @@ python_version = "3.13"
 # AIDEV-NOTE: Legacy code is not fully annotated, so we run mypy at its default
 # strictness (it type-checks annotated definitions) rather than --strict, to keep
 # the signal-to-noise ratio high while still catching real type errors in new and
-# annotated code. flask_socketio / flask_cors ship no type stubs (see override).
+# annotated code. flask_socketio / flask_cors / flask_compress ship no type stubs (see override).
 warn_redundant_casts = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ["flask_socketio.*", "flask_cors.*"]
+module = ["flask_socketio.*", "flask_cors.*", "flask_compress.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

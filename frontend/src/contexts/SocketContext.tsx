@@ -49,8 +49,8 @@ export function SocketProvider({ children }: SocketProviderProps) {
     // stale indefinitely. Local closure flag (not a ref) so a fresh socket starts over.
     let hasConnected = false
 
-    // AIDEV-NOTE: Connect to BACKEND_URL (empty string = same origin via nginx proxy)
-    // In production/Docker: nginx proxies /socket.io to the actual backend
+    // AIDEV-NOTE: Connect to BACKEND_URL (empty string = same origin)
+    // In production/Docker: the unified statshed-server serves /socket.io same-origin
     // In development: set VITE_BACKEND_URL for direct connection, or use Vite proxy
     const socket = io(BACKEND_URL, {
       path: '/socket.io',
