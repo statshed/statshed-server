@@ -135,6 +135,7 @@ jobs:
 
       - name: Run and probe
         run: |
+          trap 'docker rm -f statshed-ci 2>/dev/null || true' EXIT
           docker run --rm -d --name statshed-ci -p 7827:7828 -e SECRET_KEY=ci statshed-server:ci
           for i in $(seq 1 20); do
             if curl -fsS http://127.0.0.1:7827/api/health; then ok=1; break; fi
@@ -142,4 +143,3 @@ jobs:
           done
           test "${ok:-0}" = "1" || { docker logs statshed-ci; exit 1; }
           curl -fsS http://127.0.0.1:7827/ | grep -q '<title>StatShed</title>'
-          docker rm -f statshed-ci
