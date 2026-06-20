@@ -72,7 +72,7 @@ func run(cfg config.Config) int {
 		return 1
 	}
 
-	srv := api.NewServer(cfg, api.NewRouter(cfg))
+	srv := api.NewServer(cfg, api.NewRouter(cfg, st))
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

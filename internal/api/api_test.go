@@ -9,21 +9,33 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/statshed/statshed-server/internal/config"
+	"github.com/statshed/statshed-server/internal/store"
 )
 
 const allowedOrigin = "http://localhost:5173"
 
-func testRouter() http.Handler {
-	return NewRouter(config.Config{CORSOrigins: []string{allowedOrigin}})
+// testRouter builds the router backed by a fresh, migrated temp store.
+func testRouter(t *testing.T) http.Handler {
+	t.Helper()
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := store.Migrate(st.Write()); err != nil {
+		t.Fatalf("store.Migrate: %v", err)
+	}
+	return NewRouter(config.Config{CORSOrigins: []string{allowedOrigin}}, st)
 }
 
 func TestSecurityHeadersAndCSP(t *testing.T) {
-	srv := httptest.NewServer(testRouter())
+	srv := httptest.NewServer(testRouter(t))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/api/health")
@@ -50,7 +62,7 @@ func TestSecurityHeadersAndCSP(t *testing.T) {
 }
 
 func TestUnknownAPIPathReturnsJSON404(t *testing.T) {
-	srv := httptest.NewServer(testRouter())
+	srv := httptest.NewServer(testRouter(t))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/api/does-not-exist")
@@ -74,7 +86,7 @@ func TestUnknownAPIPathReturnsJSON404(t *testing.T) {
 }
 
 func TestBodyLimitReturns413(t *testing.T) {
-	srv := httptest.NewServer(testRouter())
+	srv := httptest.NewServer(testRouter(t))
 	defer srv.Close()
 
 	oversized := make([]byte, config.MaxContentLength+1024)
@@ -96,7 +108,7 @@ func TestBodyLimitReturns413(t *testing.T) {
 }
 
 func TestCORSReflectsAllowedOrigin(t *testing.T) {
-	srv := httptest.NewServer(testRouter())
+	srv := httptest.NewServer(testRouter(t))
 	defer srv.Close()
 
 	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/health", nil)
@@ -116,7 +128,7 @@ func TestCORSReflectsAllowedOrigin(t *testing.T) {
 }
 
 func TestCORSDoesNotReflectDisallowedOrigin(t *testing.T) {
-	srv := httptest.NewServer(testRouter())
+	srv := httptest.NewServer(testRouter(t))
 	defer srv.Close()
 
 	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/health", nil)
@@ -132,7 +144,7 @@ func TestCORSDoesNotReflectDisallowedOrigin(t *testing.T) {
 }
 
 func TestCORSPreflight(t *testing.T) {
-	srv := httptest.NewServer(testRouter())
+	srv := httptest.NewServer(testRouter(t))
 	defer srv.Close()
 
 	req, _ := http.NewRequest(http.MethodOptions, srv.URL+"/api/status", nil)
@@ -160,7 +172,7 @@ func TestCORSPreflight(t *testing.T) {
 }
 
 func TestGzipNegotiation(t *testing.T) {
-	srv := httptest.NewServer(testRouter())
+	srv := httptest.NewServer(testRouter(t))
 	defer srv.Close()
 
 	// DisableCompression so we see the raw gzipped response (no transparent decode).
@@ -219,7 +231,7 @@ func TestRequestLoggerRecordsStatusAndDuration(t *testing.T) {
 	slog.SetDefault(slog.New(rec))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
-	srv := httptest.NewServer(testRouter())
+	srv := httptest.NewServer(testRouter(t))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/api/does-not-exist") // -> 404

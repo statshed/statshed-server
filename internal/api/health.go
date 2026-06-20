@@ -1,19 +1,38 @@
 package api
 
-import "net/http"
+import (
+	"log/slog"
+	"net/http"
+)
 
-// handleHealthStub is the Phase-2 placeholder for GET /api/health: it returns the
-// empty-DB shape so the skeleton, the healthcheck subcommand, and the contract smoke test
-// work. The real aggregate handler (single GROUP BY, precedence, by_status) replaces it in
-// Task 3.1 once the store is wired in.
-func handleHealthStub(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":      "empty",
-		"total_jobs":  0,
-		"healthy":     0,
-		"unhealthy":   0,
-		"acked":       0,
-		"in_progress": 0,
-		"by_status":   map[string]int{},
+// healthResponse is the GET /api/health body (behavioral-map §2). by_status holds raw
+// counts (including acked); unhealthy excludes acked; status follows the precedence
+// empty > unhealthy > in_progress > healthy.
+type healthResponse struct {
+	Status     string         `json:"status"`
+	TotalJobs  int            `json:"total_jobs"`
+	Healthy    int            `json:"healthy"`
+	Unhealthy  int            `json:"unhealthy"`
+	Acked      int            `json:"acked"`
+	InProgress int            `json:"in_progress"`
+	ByStatus   map[string]int `json:"by_status"`
+}
+
+func (h *handlers) health(w http.ResponseWriter, r *http.Request) {
+	summary, err := h.store.Health(r.Context())
+	if err != nil {
+		slog.Error("health summary", "err", err)
+		writeError(w, http.StatusInternalServerError, slugInternal,
+			"An internal server error occurred")
+		return
+	}
+	writeJSON(w, http.StatusOK, healthResponse{
+		Status:     summary.Status,
+		TotalJobs:  summary.TotalJobs,
+		Healthy:    summary.Healthy,
+		Unhealthy:  summary.Unhealthy,
+		Acked:      summary.Acked,
+		InProgress: summary.InProgress,
+		ByStatus:   summary.ByStatus,
 	})
 }

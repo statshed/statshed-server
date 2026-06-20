@@ -6,12 +6,19 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/statshed/statshed-server/internal/config"
+	"github.com/statshed/statshed-server/internal/store"
 )
 
+// handlers carries the dependencies shared by the REST handlers.
+type handlers struct {
+	store *store.Store
+	cfg   config.Config
+}
+
 // NewRouter builds the HTTP handler: the global middleware stack plus the /api subrouter.
-// In Phase 2 only the stub health route exists; Phase 3 adds the real handlers (wiring in
-// the store) and Phase 3.10 replaces the root NotFound with SPA serving.
-func NewRouter(cfg config.Config) http.Handler {
+// Phase 3 fills in the real handlers; Phase 3.10 replaces the root NotFound with SPA serving.
+func NewRouter(cfg config.Config, st *store.Store) http.Handler {
+	h := &handlers{store: st, cfg: cfg}
 	r := chi.NewRouter()
 
 	// Middleware order, outer -> inner: requestLogger first so it records the final status
@@ -33,7 +40,7 @@ func NewRouter(cfg config.Config) http.Handler {
 
 	r.Route("/api", func(apiRouter chi.Router) {
 		apiRouter.Use(corsMiddleware(cfg.CORSOrigins))
-		apiRouter.Get("/health", handleHealthStub)
+		apiRouter.Get("/health", h.health)
 		// Unknown /api/* paths get the JSON 404 envelope (never SPA HTML).
 		apiRouter.NotFound(jsonNotFound)
 		apiRouter.MethodNotAllowed(jsonMethodNotAllowed)
