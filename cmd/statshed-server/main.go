@@ -19,6 +19,7 @@ import (
 	"github.com/statshed/statshed-server/internal/api"
 	"github.com/statshed/statshed-server/internal/background"
 	"github.com/statshed/statshed-server/internal/config"
+	"github.com/statshed/statshed-server/internal/realtime"
 	"github.com/statshed/statshed-server/internal/store"
 )
 
@@ -73,7 +74,8 @@ func run(cfg config.Config) int {
 		return 1
 	}
 
-	srv := api.NewServer(cfg, api.NewRouter(cfg, st))
+	hub := realtime.NewHub()
+	srv := api.NewServer(cfg, api.NewRouter(cfg, st, hub))
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

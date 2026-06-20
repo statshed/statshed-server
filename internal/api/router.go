@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/statshed/statshed-server/internal/config"
+	"github.com/statshed/statshed-server/internal/realtime"
 	"github.com/statshed/statshed-server/internal/staticfs"
 	"github.com/statshed/statshed-server/internal/store"
 )
@@ -17,8 +18,8 @@ type handlers struct {
 }
 
 // NewRouter builds the HTTP handler: the global middleware stack plus the /api subrouter.
-// Phase 3 fills in the real handlers; Phase 3.10 replaces the root NotFound with SPA serving.
-func NewRouter(cfg config.Config, st *store.Store) http.Handler {
+// The hub backs GET /api/events (Phase 5.2 wires the handlers' real-time broadcasts).
+func NewRouter(cfg config.Config, st *store.Store, hub *realtime.Hub) http.Handler {
 	h := &handlers{store: st, cfg: cfg}
 	r := chi.NewRouter()
 
@@ -45,6 +46,7 @@ func NewRouter(cfg config.Config, st *store.Store) http.Handler {
 		apiRouter.Use(corsMiddleware(cfg.CORSOrigins))
 		apiRouter.Use(bodyLimit(config.MaxContentLength))
 		apiRouter.Get("/health", h.health)
+		apiRouter.Get("/events", hub.ServeEvents)
 		apiRouter.Post("/status", h.postStatus)
 		apiRouter.Get("/jobs", h.listJobs)
 		apiRouter.Post("/jobs/{id:[0-9]+}/ack", h.ackJob)

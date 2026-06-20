@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/statshed/statshed-server/internal/config"
+	"github.com/statshed/statshed-server/internal/realtime"
 	"github.com/statshed/statshed-server/internal/store"
 )
 
@@ -22,6 +23,12 @@ const allowedOrigin = "http://localhost:5173"
 
 // testRouter builds the router backed by a fresh, migrated temp store.
 func testRouter(t *testing.T) http.Handler {
+	r, _ := testRouterWithHub(t)
+	return r
+}
+
+// testRouterWithHub also returns the SSE hub, so tests can broadcast into it.
+func testRouterWithHub(t *testing.T) (http.Handler, *realtime.Hub) {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -31,7 +38,8 @@ func testRouter(t *testing.T) http.Handler {
 	if err := store.Migrate(st.Write()); err != nil {
 		t.Fatalf("store.Migrate: %v", err)
 	}
-	return NewRouter(config.Config{CORSOrigins: []string{allowedOrigin}}, st)
+	hub := realtime.NewHub()
+	return NewRouter(config.Config{CORSOrigins: []string{allowedOrigin}}, st, hub), hub
 }
 
 func TestSecurityHeadersAndCSP(t *testing.T) {

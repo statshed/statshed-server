@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/statshed/statshed-server/internal/config"
+	"github.com/statshed/statshed-server/internal/realtime"
 	"github.com/statshed/statshed-server/internal/store"
 )
 
@@ -22,7 +23,7 @@ func TestInternalErrorEnvelope(t *testing.T) {
 	if err := store.Migrate(st.Write()); err != nil {
 		t.Fatal(err)
 	}
-	router := NewRouter(config.Config{CORSOrigins: []string{allowedOrigin}}, st)
+	router := NewRouter(config.Config{CORSOrigins: []string{allowedOrigin}}, st, realtime.NewHub())
 
 	// Inject a failure: a closed read handle makes the health aggregate error out.
 	if err := st.Read().Close(); err != nil {
