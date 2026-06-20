@@ -51,6 +51,41 @@ jobs:
       - name: Tests (pytest)
         run: uv run pytest
 
+  go:
+    name: Go — build, vet, lint, test (race)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # go-version tracks the 1.26 floor in go.mod (C5). Module/build caching keys on
+      # go.sum (added in Phase 2 when the first dependencies land); harmless until then.
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      # `golangci-lint run` (pinned v2) also reports the gofmt/goimports formatters
+      # configured under .golangci.yml's `formatters:` as failing issues — verified
+      # locally that a misformatted file makes this step exit non-zero — so this is the
+      # formatting gate too; a separate `golangci-lint fmt --diff` step is NOT needed
+      # (and would not gate: `fmt --diff` only prints a diff and exits 0). Pin the
+      # version for reproducibility (S8); keep it in step with .golangci.yml's `version`.
+      - name: Lint (golangci-lint)
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.12.2
+
+      # -race is the high-value hardening baseline for the concurrent worker + SSE hub (C3).
+      - name: Test (race)
+        run: go test -race ./...
+
   frontend:
     name: Frontend — lint, type-check, test, build
     runs-on: ubuntu-latest

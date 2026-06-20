@@ -1,0 +1,27 @@
+# golangci-lint configuration for the Go server (loop/impl-guide.md Task 0.2).
+# Schema is golangci-lint v2; the CI job pins the binary to a specific v2.x release
+# for reproducibility (S8) — keep that pin and this file's `version` in step.
+version: "2"
+
+linters:
+  # The "standard" set is govet, staticcheck, errcheck, ineffassign, and unused —
+  # the linters called for by the plan plus dead-code detection. Keep the bar here;
+  # add opinionated linters only with a concrete reason.
+  default: standard
+  exclusions:
+    # First-party Go lives only under cmd/ and internal/. The frontend/ and backend/
+    # trees carry no Go we own — but `go ./...` still descends into a vendored Go file
+    # under frontend/node_modules. Keep the linter off both trees.
+    paths:
+      - frontend/
+      - backend/
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      # Group our own packages in a separate import block.
+      local-prefixes:
+        - github.com/statshed/statshed-server
