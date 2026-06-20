@@ -31,8 +31,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import contains_eager, defer
 from werkzeug.exceptions import HTTPException, NotFound
 
-from background import start_timeout_checker
-from config import Config
+from background import run_expiration_check, run_timeout_check, start_timeout_checker
+from config import Config, is_test_hooks_enabled
 from models import (
     UNHEALTHY_STATUSES,
     VALID_STATUSES,
@@ -1879,6 +1879,27 @@ def admin_cleanup():
             "dry_run": dry_run,
         }
     )
+
+
+# AIDEV-NOTE: Guarded test-only tick hook. Registered ONLY when STATSHED_TEST_HOOKS is
+# set; otherwise this block is skipped and POST /api/admin/run-checks falls through to the
+# ordinary JSON 404 (the route does not exist). It runs one timeout pass then one
+# expiration pass synchronously and returns their structured result dicts, so the shared
+# HTTP contract suite can make background transitions deterministic instead of waiting on
+# the 60s scheduler (which is disabled under the same flag). See spec.md sections 8.2/8.4.
+if is_test_hooks_enabled():
+
+    @api.route("/admin/run-checks", methods=["POST"])
+    def run_checks():
+        """Drive one timeout + expiration pass and return both result dicts."""
+        timeout_result = run_timeout_check(db_session, socketio)
+        expiration_result = run_expiration_check(db_session, socketio)
+        return jsonify(
+            {
+                "timeout_result": timeout_result,
+                "expiration_result": expiration_result,
+            }
+        )
 
 
 # =============================================================================

@@ -20,7 +20,7 @@ from flask import Flask
 from flask_socketio import SocketIO
 from sqlalchemy.orm import scoped_session
 
-from config import Config
+from config import Config, is_test_hooks_enabled
 from models import Group, Job, get_config_value
 
 
@@ -151,11 +151,23 @@ def run_timeout_check(
                     },
                 )
 
+    # AIDEV-NOTE: EVERY id array here is sorted ascending so the cross-language tick-hook
+    # contract (spec.md 8.4) can compare them deterministically between the Python and Go
+    # servers -- otherwise `affected_job_ids` (timeout ids then stale ids) and
+    # `affected_group_ids` (from a set) have implementation-defined order and a direct
+    # equality assertion would spuriously fail. `timeout_job_ids`/`stale_job_ids` are an
+    # additive enrichment exposing the timeout-vs-stale split (a stale job must never
+    # appear under timeout_job_ids), which the combined `affected_job_ids` loses. This is
+    # only the RETURN value -- the health_update emit above keeps using the unsorted
+    # in-place per-type lists, so emitted payloads are unchanged. Production callers (the
+    # 60s loop) ignore the return entirely, so this changes no observable behavior.
     return {
-        "affected_job_ids": affected_jobs,
-        "affected_group_ids": list(affected_groups),
+        "affected_job_ids": sorted(affected_jobs),
+        "affected_group_ids": sorted(affected_groups),
         "timeout_count": len(timeout_job_ids),
         "stale_count": len(stale_job_ids),
+        "timeout_job_ids": sorted(timeout_job_ids),
+        "stale_job_ids": sorted(stale_job_ids),
     }
 
 
@@ -235,9 +247,12 @@ def run_expiration_check(
                 },
             )
 
+    # AIDEV-NOTE: Sorted ascending for the deterministic cross-language tick-hook
+    # contract (spec.md 8.4), matching run_timeout_check. The per-job job_expired emit
+    # above is unaffected (one event per job, each carrying a scalar job_id).
     return {
-        "expired_job_ids": [j["job_id"] for j in expired_jobs],
-        "affected_group_ids": list(affected_groups),
+        "expired_job_ids": sorted(j["job_id"] for j in expired_jobs),
+        "affected_group_ids": sorted(affected_groups),
         "expired_count": len(expired_jobs),
     }
 
@@ -255,6 +270,17 @@ def start_timeout_checker(app: Flask, socketio: SocketIO, db_session: scoped_ses
         socketio: Socket.IO instance
         db_session: Database session factory
     """
+    # AIDEV-NOTE: Under STATSHED_TEST_HOOKS the periodic 60s loop is NOT scheduled, so
+    # background passes happen only on demand via POST /api/admin/run-checks. This keeps
+    # the shared contract suite deterministic -- no stray pass perturbs a test (spec.md
+    # section 8.2). Read live (is_test_hooks_enabled) so pytest's per-test re-import sees
+    # the current env. Production never sets the flag, so the loop starts as before.
+    if is_test_hooks_enabled():
+        app.logger.info(
+            "STATSHED_TEST_HOOKS set: 60s background scheduler disabled "
+            "(use POST /api/admin/run-checks to drive checks)"
+        )
+        return
 
     def check_timeouts_and_expirations():
         """Background task that runs timeout and expiration checks."""

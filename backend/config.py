@@ -46,8 +46,9 @@ class Config:
 
     # AIDEV-NOTE: Upper bound on the GET /jobs `limit` query param. Pagination is
     # opt-in (no params -> all jobs), but a requested limit is clamped to this value
-    # to bound the response size on very large datasets.
-    MAX_JOBS_PAGE_SIZE: int = 500
+    # to bound the response size on very large datasets. Env-overridable so the shared
+    # contract suite's `max_page_size` profile can drive the clamp with a small value.
+    MAX_JOBS_PAGE_SIZE: int = int(os.environ.get("MAX_JOBS_PAGE_SIZE", "500"))
 
     # Log upload settings
     # AIDEV-NOTE: LOG_UPLOAD_ENABLED controls whether log files can be attached to status updates.
@@ -85,3 +86,27 @@ class TestConfig(Config):
     TESTING: bool = True
     DEBUG: bool = True
     DATABASE_URL: str = "sqlite:///:memory:"
+
+
+def is_test_hooks_enabled() -> bool:
+    """Whether the guarded, test-only HTTP hooks are active (STATSHED_TEST_HOOKS).
+
+    AIDEV-NOTE: Read live from the environment on purpose -- NOT cached as a Config
+    class attribute. The pytest suite re-imports app.py per test (tests/conftest.py)
+    but never re-imports config, so a cached attribute would freeze at the value
+    present when config was first imported and a test could not toggle it. Reading the
+    env here lets a test flip it via monkeypatch; production sets STATSHED_TEST_HOOKS
+    once at process start, so the effect is identical.
+
+    When enabled, app.py registers POST /api/admin/run-checks and the 60s background
+    scheduler is NOT started -- both purely so the shared HTTP contract suite can drive
+    background passes deterministically (see spec.md sections 8.2 and 8.4). The hook is
+    never registered in normal operation. The function name avoids a leading "test_" so
+    pytest never collects it as a test case.
+    """
+    return os.environ.get("STATSHED_TEST_HOOKS", "false").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
