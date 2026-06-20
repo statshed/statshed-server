@@ -45,9 +45,15 @@ func dsn(path string) string {
 // gunicorn-single-worker constraint); reads use a WAL-concurrent pool. The schema is NOT
 // created here — the caller runs Migrate (fresh-DB-only, C1).
 func Open(path string) (*Store, error) {
+	return openWithDriver("sqlite", path)
+}
+
+// openWithDriver is Open parameterized by the SQL driver name, so tests can substitute a
+// statement-counting driver wrapping modernc.
+func openWithDriver(driverName, path string) (*Store, error) {
 	d := dsn(path)
 
-	write, err := sql.Open("sqlite", d)
+	write, err := sql.Open(driverName, d)
 	if err != nil {
 		return nil, fmt.Errorf("open write handle: %w", err)
 	}
@@ -57,7 +63,7 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("ping write handle: %w", err)
 	}
 
-	read, err := sql.Open("sqlite", d)
+	read, err := sql.Open(driverName, d)
 	if err != nil {
 		_ = write.Close()
 		return nil, fmt.Errorf("open read handle: %w", err)
