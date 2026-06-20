@@ -24,6 +24,13 @@ htmlcov/
 *.sqlite
 *.sqlite3
 
+# Go (statshed-server)
+/statshed-server
+# Built SPA embedded into the binary. A committed placeholder under this dir is
+# re-exempted in Task 3.10 (negate the dir first, then the placeholder files) so
+# //go:embed always compiles.
+internal/staticfs/dist/
+
 # Node / frontend
 node_modules/
 dist/
