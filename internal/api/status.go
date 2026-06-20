@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -88,21 +87,8 @@ func (h *handlers) parseStatusRequest(w http.ResponseWriter, r *http.Request) (d
 		return h.parseMultipart(w, r)
 	}
 
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, slugBadRequest, "JSON object required")
-		return nil, nil, "", false
-	}
-	var parsed any
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		writeError(w, http.StatusBadRequest, slugBadRequest, "JSON object required")
-		return nil, nil, "", false
-	}
-	// A non-object body, or an empty object, is rejected (matches Python's `not data or
-	// not isinstance(data, dict)`).
-	m, isObj := parsed.(map[string]any)
-	if !isObj || len(m) == 0 {
-		writeError(w, http.StatusBadRequest, slugBadRequest, "JSON object required")
+	m, ok := decodeJSONObject(w, r)
+	if !ok {
 		return nil, nil, "", false
 	}
 	return m, nil, "", true
