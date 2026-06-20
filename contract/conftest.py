@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -78,6 +79,26 @@ def backdate(table: str, where: str, **cols: object) -> None:
         con.execute(
             f"UPDATE {table} SET {assignments} WHERE {where}",
             list(cols.values()),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def insert_group(name: str) -> None:
+    """Insert a bare group row (no jobs) via direct SQL.
+
+    AIDEV-NOTE: A group with zero jobs cannot be created through the API (a group is
+    created implicitly by the first job POST), yet GET /api/groups must still return it
+    with zeroed aggregates. Used by the empty-group test (spec.md 8.3 bucket 2).
+    created_at uses the app's stored text format.
+    """
+    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")
+    con = sqlite3.connect(_db_path())
+    try:
+        con.execute(
+            "INSERT INTO groups (name, staleness_enabled, created_at) VALUES (?, 0, ?)",
+            (name, now),
         )
         con.commit()
     finally:

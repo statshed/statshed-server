@@ -37,18 +37,37 @@ CONTRACT = REPO_ROOT / "contract"
 REQUIRED_TABLES = ("groups", "jobs", "config")
 
 # AIDEV-NOTE: Per-profile extra server env (spec.md 8.3). STATSHED_TEST_HOOKS=1 is always
-# set (build_env) so the tick hook exists and the 60s scheduler is off. Small numeric
-# limits make the clamp/truncation observable. The SPA profiles (with_spa/no_spa) are
-# target-specific and resolved in build_env; their fixtures/synthetic dist arrive with
-# the SPA porting (Task 1.4 / 3.10).
+# set (build_env) so the tick hook exists and the 60s scheduler is off.
+#   max_log_lines = 1500: one value covers all three log tests (a >1500-line log truncates
+#     to 1500; a <1500-line log is untruncated; a 1500-line log retrieved with the default
+#     tail caps at 1000 < 1500). See coverage-map.md.
+#   max_page_size = 2: a `limit=100` request clamps to 2.
+# The SPA profiles (with_spa/no_spa) are target-specific and resolved in build_env.
 PROFILE_ENV: dict[str, dict[str, str]] = {
     "default": {},
     "log_disabled": {"LOG_UPLOAD_ENABLED": "false"},
-    "max_log_lines": {"MAX_LOG_LINES": "5"},
-    "max_page_size": {"MAX_JOBS_PAGE_SIZE": "3"},
+    "max_log_lines": {"MAX_LOG_LINES": "1500"},
+    "max_page_size": {"MAX_JOBS_PAGE_SIZE": "2"},
     "with_spa": {},
     "no_spa": {},
 }
+
+
+def write_synthetic_spa(dist: Path) -> Path:
+    """Write a minimal SPA dist that the `with_spa` profile serves via STATIC_DIR.
+
+    AIDEV-NOTE: The re-authored static-serving tests (test_spa.py) assert the shell
+    contains "StatShed" and the asset contains "console.log". Both servers serve this
+    same on-disk dist when STATIC_DIR points here (Python register_spa; Go STATIC_DIR
+    override, Task 3.10).
+    """
+    (dist / "assets").mkdir(parents=True, exist_ok=True)
+    (dist / "index.html").write_text(
+        "<!doctype html><html><head><title>StatShed</title></head>"
+        '<body><div id="root"></div></body></html>'
+    )
+    (dist / "assets" / "app.js").write_text("console.log('hi')\n")
+    return dist
 
 
 def free_port() -> int:
@@ -58,7 +77,9 @@ def free_port() -> int:
         return int(s.getsockname()[1])
 
 
-def build_env(profile: str, host: str, port: int, db_file: Path) -> dict[str, str]:
+def build_env(
+    target: str, profile: str, host: str, port: int, db_file: Path, tmpdir: Path
+) -> dict[str, str]:
     env = dict(os.environ)
     # AIDEV-NOTE: runner.py runs inside the contract uv venv, so os.environ carries that
     # venv's VIRTUAL_ENV. Drop it before launching the server: the Python target's
@@ -71,6 +92,15 @@ def build_env(profile: str, host: str, port: int, db_file: Path) -> dict[str, st
     env["DATABASE_URL"] = "sqlite:///" + str(db_file)
     env["STATSHED_TEST_HOOKS"] = "1"
     env.update(PROFILE_ENV[profile])
+    if profile == "with_spa":
+        env["STATIC_DIR"] = str(write_synthetic_spa(tmpdir / "spa-dist"))
+    elif profile == "no_spa":
+        if target == "go":
+            env["STATIC_DISABLED"] = "1"
+        else:
+            # Python registers the SPA only when STATIC_DIR exists; point it at a
+            # non-existent dir so no fallback is registered (bare paths -> JSON 404).
+            env["STATIC_DIR"] = str(tmpdir / "no-such-spa")
     return env
 
 
@@ -186,7 +216,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="statshed-contract-") as tmp:
         tmpdir = Path(tmp)
         db_file = tmpdir / "statshed.db"
-        env = build_env(args.profile, host, port, db_file)
+        env = build_env(args.target, args.profile, host, port, db_file, tmpdir)
 
         if args.target == "python":
             proc = start_python(env, host, port)
