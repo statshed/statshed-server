@@ -35,20 +35,26 @@ func (h *handlers) ackJob(w http.ResponseWriter, r *http.Request) {
 	}
 	if !job.Acked {
 		now := time.Now().UTC()
-		if err := h.store.MarkAcked(r.Context(), id, now); err != nil {
+		acked, err := h.store.MarkAcked(r.Context(), id, now)
+		if err != nil {
 			h.internalError(w, "ack job", err)
 			return
 		}
-		job.Acked = true
-		job.AckedAt = &now
-		realtime.Publish(h.hub, "jobs_acked", map[string]any{
-			"schema_version": 1,
-			"job_ids":        []int{id},
-			"group_id":       job.GroupID,
-			"group_name":     job.GroupName,
-			"acked_count":    1,
-			"timestamp":      store.FormatAPITime(now),
-		})
+		if acked {
+			job.Acked = true
+			job.AckedAt = &now
+			realtime.Publish(h.hub, "jobs_acked", map[string]any{
+				"schema_version": 1,
+				"job_ids":        []int{id},
+				"group_id":       job.GroupID,
+				"group_name":     job.GroupName,
+				"acked_count":    1,
+				"timestamp":      store.FormatAPITime(now),
+			})
+		} else if fresh, found, ferr := h.store.JobByID(r.Context(), id); ferr == nil && found {
+			// A concurrent request acked it first: reflect the real state, emit no event.
+			job = fresh
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"job": job.APIMap()})
 }

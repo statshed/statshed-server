@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -19,7 +20,7 @@ import (
 
 // sseHarness builds a test server with the tick hook enabled and returns it plus the store
 // (for backdating jobs to drive timeout/expiration).
-func sseHarness(t *testing.T) (*httptest.Server, *store.Store) {
+func sseHarness(t *testing.T) (*httptest.Server, *store.Store, *realtime.Hub) {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "sse.db"))
 	if err != nil {
@@ -29,10 +30,11 @@ func sseHarness(t *testing.T) (*httptest.Server, *store.Store) {
 	if err := store.Migrate(st.Write()); err != nil {
 		t.Fatal(err)
 	}
+	hub := realtime.NewHub()
 	cfg := config.Config{CORSOrigins: []string{allowedOrigin}, TestHooks: true}
-	srv := httptest.NewServer(NewRouter(cfg, st, realtime.NewHub()))
+	srv := httptest.NewServer(NewRouter(cfg, st, hub))
 	t.Cleanup(srv.Close)
-	return srv, st
+	return srv, st, hub
 }
 
 type sseFrame struct {
@@ -44,21 +46,41 @@ type frameCollector struct {
 	mu     sync.Mutex
 	frames []sseFrame
 	resp   *http.Response
+	client *http.Client
+	cancel context.CancelFunc
 }
 
-func connectSSE(t *testing.T, baseURL string) *frameCollector {
+func connectSSE(t *testing.T, baseURL string, hub *realtime.Hub) *frameCollector {
 	t.Helper()
-	req, _ := http.NewRequest(http.MethodGet, baseURL+"/api/events", nil)
-	resp, err := http.DefaultClient.Do(req)
+	before := hub.ClientCount()
+	// A dedicated client + cancelable request so close() tears the long-lived stream down
+	// cleanly: cancelling closes the connection, which cancels the server handler's context
+	// (it returns + unregisters), so httptest's Close does not block.
+	client := &http.Client{}
+	ctx, cancel := context.WithCancel(context.Background())
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/events", nil)
+	resp, err := client.Do(req)
 	if err != nil {
+		cancel()
 		t.Fatal(err)
 	}
 	if resp.StatusCode != http.StatusOK {
+		cancel()
 		t.Fatalf("/api/events status = %d, want 200", resp.StatusCode)
 	}
-	fc := &frameCollector{resp: resp}
+	fc := &frameCollector{resp: resp, client: client, cancel: cancel}
 	go fc.read()
-	return fc
+	// ServeEvents flushes the 200 before it registers with the hub, so wait until the client
+	// is actually subscribed; otherwise an immediately-following Broadcast reaches no one.
+	for i := 0; i < 200; i++ {
+		if hub.ClientCount() > before {
+			return fc
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	fc.close()
+	t.Fatal("SSE client did not register with the hub within timeout")
+	return nil
 }
 
 func (fc *frameCollector) read() {
@@ -81,7 +103,11 @@ func (fc *frameCollector) read() {
 	}
 }
 
-func (fc *frameCollector) close() { _ = fc.resp.Body.Close() }
+func (fc *frameCollector) close() {
+	fc.cancel()
+	_ = fc.resp.Body.Close()
+	fc.client.CloseIdleConnections()
+}
 
 func parseFrame(raw string) (sseFrame, bool) {
 	var f sseFrame
@@ -175,8 +201,8 @@ func idSet(v any) map[int]bool {
 // payload against the §8.4 oracle (id arrays compared as sets), plus no-duplicate
 // group_created.
 func TestSSEEventOracle(t *testing.T) {
-	srv, st := sseHarness(t)
-	fc := connectSSE(t, srv.URL)
+	srv, st, hub := sseHarness(t)
+	fc := connectSSE(t, srv.URL, hub)
 	defer fc.close()
 
 	// group_created (alpha) + status_update on the first report to a new group.
@@ -236,14 +262,14 @@ func TestSSEEventOracle(t *testing.T) {
 // TestSSEReconnectReceivesEvents verifies a freshly (re)connected client receives events
 // published after it connects — the basis for EventSource auto-reconnect resync.
 func TestSSEReconnectReceivesEvents(t *testing.T) {
-	srv, _ := sseHarness(t)
+	srv, _, hub := sseHarness(t)
 
-	first := connectSSE(t, srv.URL)
+	first := connectSSE(t, srv.URL, hub)
 	postStatusJSON(t, srv.URL, "g", "j", "success")
 	first.await(t, "status_update", nil)
 	first.close() // simulate a dropped connection
 
-	second := connectSSE(t, srv.URL)
+	second := connectSSE(t, srv.URL, hub)
 	defer second.close()
 	postStatusJSON(t, srv.URL, "g", "j", "error")
 	second.await(t, "status_update", func(d map[string]any) bool {

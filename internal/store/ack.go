@@ -21,12 +21,21 @@ func (s *Store) JobByID(ctx context.Context, id int) (Job, bool, error) {
 }
 
 // MarkAcked acks a single job (idempotent: a no-op when already acked, so acked_at is not
-// re-stamped). The caller is responsible for the unhealthy-status check.
-func (s *Store) MarkAcked(ctx context.Context, id int, now time.Time) error {
-	_, err := s.write.ExecContext(ctx,
+// re-stamped). It returns whether THIS call actually acked the row, so the caller only
+// emits jobs_acked when it really transitioned the job (a concurrent ack that wins the race
+// affects zero rows here). The caller is responsible for the unhealthy-status check.
+func (s *Store) MarkAcked(ctx context.Context, id int, now time.Time) (bool, error) {
+	res, err := s.write.ExecContext(ctx,
 		"UPDATE jobs SET acked = 1, acked_at = ? WHERE id = ? AND acked = 0",
 		formatStored(now), id)
-	return err
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 // AckUnhealthy acks all unacked unhealthy jobs, optionally scoped to one group, and
