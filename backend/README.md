@@ -109,24 +109,25 @@ uv run gunicorn -w 4 -k gevent --bind 0.0.0.0:7828 app:app
 
 ## Running with Docker
 
-The recommended way to run the backend together with the web UI is the root
+The recommended way to run the full stack (SPA + API + WebSocket) is the root
 compose file — from the repo root:
 
 ```bash
-docker compose up --build -d        # backend + frontend
-# or just the backend service:
-docker compose up --build -d backend
+docker compose up --build -d        # builds and starts the unified statshed-server image
 ```
 
-To build and run only this image by hand:
+This builds the single `statshed-server` image, which includes the compiled React SPA
+served at `/`, the REST API under `/api`, and Socket.IO at `/socket.io`.
+
+To build and run only this image by hand (from the repo root, where the Dockerfile lives):
 
 ```bash
-# Build the image (from this backend/ directory)
-docker build -t statshed-backend .
+# Build the image (from the repo root)
+docker build -t statshed-server .
 
 # Run the container
-docker run -d -p 7828:7828 -v statshed-data:/data \
-  -e SECRET_KEY=$(openssl rand -hex 32) statshed-backend
+docker run -d -p 7827:7828 -v statshed-data:/data \
+  -e SECRET_KEY=$(openssl rand -hex 32) statshed-server
 ```
 
 The SQLite database is persisted in a Docker volume at `/data/statshed.db`.

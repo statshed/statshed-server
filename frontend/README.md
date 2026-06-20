@@ -129,46 +129,29 @@ The development server runs on `http://localhost:7827` and proxies API requests 
 
 ### Docker
 
-The frontend is normally built and run via the root compose file (which also wires
-it to the backend) — from the repo root:
+In production, the SPA is built into the single `statshed-server` image — Flask serves
+the static bundle alongside the REST API and WebSocket. There is no separate frontend
+container or nginx in production.
+
+To run the full stack (SPA + API + WebSocket), use the root compose file:
 
 ```bash
-docker compose up --build -d        # frontend + backend
+docker compose up --build -d        # builds the unified statshed-server image
 ```
 
-To build and run only this image by hand:
+The dashboard is then available at `http://localhost:7827` (or `STATSHED_PORT`).
 
-```bash
-docker build -t statshed-frontend .
-docker run -p 7827:80 -e BACKEND_URL=http://localhost:7828 statshed-frontend
-```
-
-The containerized frontend will be available at `http://localhost:7827`.
-
-#### Configuring the Backend URL
-
-Set the `BACKEND_URL` environment variable to point to your backend server. Edit `docker-compose.yml`:
-
-```yaml
-environment:
-  - BACKEND_URL=http://app1.gen.realgo.com:7828
-```
-
-Or pass it directly when running the container:
-
-```bash
-docker run -p 7827:80 -e BACKEND_URL=http://app1.gen.realgo.com:7828 statshed-frontend
-```
-
-**Note:** The Docker build creates a production build served by nginx. Nginx proxies `/api` and `/socket.io` requests to the configured backend. For development with hot reload, use `npm run dev` instead.
+For development with hot reload, use `npm run dev` instead (see above).
 
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VITE_API_URL` | `http://localhost:7828` | Backend API URL (only needed in production) |
+| `VITE_BACKEND_URL` | _(empty)_ | BUILD-TIME backend URL baked into the JS bundle. Leave empty for the unified image (same-origin). Only set to a public HTTPS URL when building the SPA for a different-origin backend. |
 
-In development, the Vite dev server proxies `/api/*` requests to `http://localhost:7828` and `/socket.io/*` for WebSocket connections.
+In development, the Vite dev server proxies `/api/*` and `/socket.io/*` requests to the backend at `http://localhost:7828`.
+
+In the unified production image, leave `VITE_BACKEND_URL` empty — the browser uses the same origin as the page, and Flask serves `/api` and `/socket.io` directly.
 
 ## Component Library
 

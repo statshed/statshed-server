@@ -10,18 +10,19 @@ that have timed out or gone stale — updating in real time over WebSockets.
 
 This repository, **`statshed-server`**, contains everything you need to run StatShed:
 
-- **`backend/`** — a Flask REST API + Socket.IO server (Python 3.13), persisting to SQLite.
-- **`frontend/`** — a React + Vite single-page dashboard, served by nginx.
+- **`backend/`** — a Flask REST API + Socket.IO server (Python 3.13), persisting to SQLite. It also serves the built frontend.
+- **`frontend/`** — a React + Vite single-page dashboard, built and bundled into the backend image.
 
-One `docker compose up` brings the whole thing online.
+A single `statshed-server` Docker image serves the dashboard, the REST API, and the live WebSocket. One `docker compose up` brings it online.
 
 ```
-              ┌────────────────────┐   /api      ┌──────────────────────────┐
-   browser ──▶│  frontend          │────────────▶│  backend                 │
-   :7827      │  nginx + React SPA │  /socket.io │  Flask + Socket.IO       │
-              └────────────────────┘◀────────────│  SQLite @ /data          │
-                                      live events └──────────────────────────┘
-                                                       :7828  ◀── CLI clients POST status
+                ┌──────────────────────────────────────┐
+   browser ────▶│  statshed-server                     │
+   :7827        │  Flask + Socket.IO  (serves SPA,      │
+                │  /api REST, /socket.io WebSocket)     │
+   CLI ────────▶│  SQLite @ /data                       │
+   POST /api    └──────────────────────────────────────┘
+                                  :7827
 ```
 
 > **Heads-up on security:** StatShed has **no authentication** by design — it's meant for
@@ -69,7 +70,7 @@ With the stack running, report a job status to the backend API and watch it appe
 dashboard **instantly** (no refresh):
 
 ```bash
-curl -X POST http://localhost:7828/status \
+curl -X POST http://localhost:7827/api/status \
   -H 'Content-Type: application/json' \
   -d '{"group":"demo","job":"hello-world","status":"success","message":"It works!"}'
 ```
@@ -109,8 +110,7 @@ Copy [`.env.example`](.env.example) to `.env` and adjust. The most common settin
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `FRONTEND_PORT` | `7827` | Host port for the web UI. |
-| `BACKEND_PORT` | `7828` | Host port for the REST API + WebSocket (where CLI clients submit status). |
+| `STATSHED_PORT` | `7827` | Host port for the dashboard, REST API, and WebSocket (CLI clients submit status here). |
 | `SECRET_KEY` | _(random)_ | Flask secret key. **Set a strong value** for any shared deployment: `openssl rand -hex 32`. An empty value generates a random key on each restart. |
 | `DATABASE_URL` | `sqlite:////data/statshed.db` | Database connection. SQLite (in the `statshed-data` volume) by default; set a `postgresql://…` URL for multi-instance deployments. |
 | `DEBUG` | `false` | Flask debug mode. Keep `false` outside local development. |
@@ -125,15 +125,15 @@ it deletes all stored jobs and configuration.
 ## Architecture
 
 - **Frontend** (`frontend/`): React 19 + Vite + TypeScript + Tailwind, built to static
-  assets and served by nginx. nginx reverse-proxies `/api` and `/socket.io` to the backend,
-  so the browser only ever talks to one origin — **no CORS configuration needed** in the
-  bundled deployment.
-- **Backend** (`backend/`): Flask + gunicorn (gevent worker) serving a JSON REST API and a
-  Socket.IO endpoint for live updates. SQLAlchemy models with Alembic migrations that run
-  automatically on container start. A background task promotes `progress` jobs to `timeout`
-  and `success` jobs to `stale` based on configurable thresholds.
+  assets and bundled into the backend image. Flask serves the SPA at `/`, so the browser
+  always talks to one origin — **no CORS configuration needed** in the bundled deployment.
+- **Backend** (`backend/`): Flask + gunicorn (gevent worker) serving the React SPA, a JSON
+  REST API under `/api`, and a Socket.IO endpoint at `/socket.io` for live updates.
+  SQLAlchemy models with Alembic migrations that run automatically on container start. A
+  background task promotes `progress` jobs to `timeout` and `success` jobs to `stale` based
+  on configurable thresholds.
 - **CLI clients** (separate repos under the [statshed org](https://github.com/statshed)):
-  the `statshed` command-line tool POSTs status to the backend API.
+  the `statshed` command-line tool POSTs status to `/api/status` on the single port.
 
 Design docs live in [`docs/`](docs/) ([overall](docs/design.md),
 [backend](docs/design-backend.md), [frontend](docs/design-frontend.md),
@@ -143,14 +143,14 @@ Design docs live in [`docs/`](docs/) ([overall](docs/design.md),
 
 ```
 statshed-server/
-├── backend/                  # Flask API + Socket.IO server (Python 3.13, uv)
-├── frontend/                 # React + Vite dashboard (served by nginx)
+├── backend/                  # Flask API + Socket.IO server + SPA host (Python 3.13, uv)
+├── frontend/                 # React + Vite dashboard (built into the backend image)
 ├── docs/                     # Design docs + API reference
-├── docker-compose.yml        # Full stack, built from source (contributors)
-├── docker-compose.release.yml# Full stack from prebuilt ghcr.io images (end users)
+├── docker-compose.yml        # Single statshed service, built from source (contributors)
+├── docker-compose.release.yml# Single statshed service from prebuilt ghcr.io image (end users)
 ├── .env.example              # Configuration template
 ├── Makefile                  # Convenience targets — `make help`
-└── .github/workflows/        # CI (lint/test/build) and Release (images + GitHub Release)
+└── .github/workflows/        # CI (lint/test/build) and Release (image + GitHub Release)
 ```
 
 ## Running the tests
@@ -175,9 +175,9 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-> **One-time:** after the first release, set the `statshed-backend` and `statshed-frontend`
-> GHCR packages to **public** (each package's *Package settings → Change visibility*) so
-> anyone can `docker pull` them, and link them to this repository for inherited visibility.
+> **One-time:** after the first release, set the `statshed-server` GHCR package to
+> **public** (*Package settings → Change visibility*) so anyone can `docker pull` it, and
+> link it to this repository for inherited visibility.
 
 ## License
 
