@@ -100,6 +100,69 @@ func TestRunTimeoutPassStaleNeedsEnabledGroup(t *testing.T) {
 	}
 }
 
+// TestTimeoutPassSkipsRefreshedJob locks the codex race fix: a job that was overdue but
+// has since been refreshed (updated_at advanced) must NOT be transitioned — the atomic
+// UPDATE re-checks updated_at < cutoff at execution time.
+func TestTimeoutPassSkipsRefreshedJob(t *testing.T) {
+	s := freshStore(t)
+	ctx := context.Background()
+	base := time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC)
+
+	if _, err := s.UpsertJob(ctx, UpsertParams{GroupName: "g", JobName: "j", Status: "progress"}, base.Add(-10*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	// Refreshed to "now" (the concurrent POST /status case) just before the pass.
+	r, err := s.UpsertJob(ctx, UpsertParams{GroupName: "g", JobName: "j", Status: "progress"}, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := s.RunTimeoutPass(ctx, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.TimeoutJobIDs) != 0 {
+		t.Errorf("timeout_job_ids = %v, want [] (a refreshed job must not be timed out)", res.TimeoutJobIDs)
+	}
+	j, _, err := s.JobByID(ctx, r.Job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j.Status != "progress" {
+		t.Errorf("refreshed job status = %q, want progress", j.Status)
+	}
+}
+
+// TestExpirationPassSkipsRefreshedJob locks the codex race fix: a job whose expires_at was
+// pushed into the future is not deleted — the atomic DELETE re-selects only still-expired
+// rows.
+func TestExpirationPassSkipsRefreshedJob(t *testing.T) {
+	s := freshStore(t)
+	ctx := context.Background()
+	base := time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC)
+
+	r, err := s.UpsertJob(ctx, UpsertParams{GroupName: "g", JobName: "j", Status: "success"}, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Write().Exec(
+		"UPDATE jobs SET expires_at = ? WHERE id = ?", "2099-01-01 00:00:00.000000", r.Job.ID,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := s.RunExpirationPass(ctx, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.ExpiredJobIDs) != 0 {
+		t.Errorf("expired_job_ids = %v, want [] (a refreshed job must survive)", res.ExpiredJobIDs)
+	}
+	if _, found, err := s.JobByID(ctx, r.Job.ID); err != nil || !found {
+		t.Errorf("refreshed job was wrongly deleted (found=%v, err=%v)", found, err)
+	}
+}
+
 func TestRunExpirationPass(t *testing.T) {
 	s := freshStore(t)
 	ctx := context.Background()

@@ -55,6 +55,12 @@ type jobGroup struct {
 // RunTimeoutPass transitions overdue progress jobs to timeout and overdue success jobs in
 // staleness-enabled groups to stale (effective timeout = group override else global else
 // default), clearing the ack on transition. Mirrors run_timeout_check.
+//
+// AIDEV-NOTE: Each transition is a SINGLE atomic UPDATE whose WHERE re-evaluates the
+// overdue predicate at execution time (status + updated_at < cutoff), with RETURNING for
+// the affected ids. This closes the select-then-update race with a concurrent POST /status:
+// a job refreshed to a healthy state (or a newer updated_at) between selection and write is
+// no longer matched, so the pass never clobbers fresh work (codex review).
 func (s *Store) RunTimeoutPass(ctx context.Context, now time.Time) (TimeoutResult, error) {
 	globalProgress, err := s.ConfigValue(ctx, "progress_timeout_minutes", config.DefaultProgressTimeoutMinutes)
 	if err != nil {
@@ -64,20 +70,17 @@ func (s *Store) RunTimeoutPass(ctx context.Context, now time.Time) (TimeoutResul
 	if err != nil {
 		return TimeoutResult{}, err
 	}
+	nowStored := formatStored(now)
 
-	timeouts, err := s.overdue(ctx, "progress", "progress_timeout_minutes", globalProgress, time.Minute, false, now)
+	timeouts, err := s.transitionOverdue(ctx, "timeout", "status = 'progress'",
+		"progress_timeout_minutes", globalProgress, "minutes", nowStored)
 	if err != nil {
 		return TimeoutResult{}, err
 	}
-	stales, err := s.overdue(ctx, "success", "staleness_timeout_hours", globalStaleness, time.Hour, true, now)
+	stales, err := s.transitionOverdue(ctx, "stale",
+		"status = 'success' AND group_id IN (SELECT id FROM groups WHERE staleness_enabled = 1)",
+		"staleness_timeout_hours", globalStaleness, "hours", nowStored)
 	if err != nil {
-		return TimeoutResult{}, err
-	}
-
-	if err := s.applyTransition(ctx, ids(timeouts), "timeout", now); err != nil {
-		return TimeoutResult{}, err
-	}
-	if err := s.applyTransition(ctx, ids(stales), "stale", now); err != nil {
 		return TimeoutResult{}, err
 	}
 
@@ -93,15 +96,18 @@ func (s *Store) RunTimeoutPass(ctx context.Context, now time.Time) (TimeoutResul
 	}, nil
 }
 
-// overdue returns the jobs of the given status whose updated_at is older than their
-// effective timeout. requireStaleness restricts to staleness-enabled groups.
-func (s *Store) overdue(ctx context.Context, status, overrideCol string, globalTimeout int, unit time.Duration, requireStaleness bool, now time.Time) ([]jobGroup, error) {
-	query := "SELECT j.id, j.group_id, j.updated_at, COALESCE(g." + overrideCol + ", ?) " +
-		"FROM jobs j JOIN groups g ON g.id = j.group_id WHERE j.status = ?"
-	if requireStaleness {
-		query += " AND g.staleness_enabled = 1"
-	}
-	rows, err := s.read.QueryContext(ctx, query, globalTimeout, status)
+// transitionOverdue atomically transitions jobs matching baseCond whose updated_at is older
+// than their effective timeout (group override of overrideCol else globalTimeout, in unit
+// "minutes"/"hours"), returning the affected (id, group). overrideCol/unit/baseCond are
+// fixed code constants (never user input).
+func (s *Store) transitionOverdue(ctx context.Context, newStatus, baseCond, overrideCol string, globalTimeout int, unit, nowStored string) ([]jobGroup, error) {
+	// cutoff per row = now - COALESCE(group override, global) <unit>; updated_at < cutoff.
+	query := "UPDATE jobs SET status = ?, acked = 0, acked_at = NULL, updated_at = ? " +
+		"WHERE " + baseCond +
+		" AND updated_at < datetime(?, '-' || " +
+		"COALESCE((SELECT " + overrideCol + " FROM groups WHERE id = jobs.group_id), ?) || ' " + unit + "') " +
+		"RETURNING id, group_id"
+	rows, err := s.write.QueryContext(ctx, query, newStatus, nowStored, nowStored, globalTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -109,39 +115,23 @@ func (s *Store) overdue(ctx context.Context, status, overrideCol string, globalT
 
 	var out []jobGroup
 	for rows.Next() {
-		var id, groupID, timeout int
-		var updatedAt string
-		if err := rows.Scan(&id, &groupID, &updatedAt, &timeout); err != nil {
+		var id, groupID int
+		if err := rows.Scan(&id, &groupID); err != nil {
 			return nil, err
 		}
-		t, err := parseStored(updatedAt)
-		if err != nil {
-			return nil, err
-		}
-		if t.Before(now.Add(-time.Duration(timeout) * unit)) {
-			out = append(out, jobGroup{id: id, groupID: groupID})
-		}
+		out = append(out, jobGroup{id: id, groupID: groupID})
 	}
 	return out, rows.Err()
 }
 
-func (s *Store) applyTransition(ctx context.Context, jobIDs []int, newStatus string, now time.Time) error {
-	if len(jobIDs) == 0 {
-		return nil
-	}
-	args := make([]any, 0, len(jobIDs)+2)
-	args = append(args, newStatus, formatStored(now))
-	for _, id := range jobIDs {
-		args = append(args, id)
-	}
-	_, err := s.write.ExecContext(ctx,
-		"UPDATE jobs SET status = ?, acked = 0, acked_at = NULL, updated_at = ? "+
-			"WHERE id IN ("+placeholders(len(jobIDs))+")", args...)
-	return err
-}
-
 // RunExpirationPass deletes jobs whose expires_at has passed, in batches of 100, returning
 // the deleted ids and affected groups. Mirrors run_expiration_check.
+//
+// AIDEV-NOTE: The DELETE re-selects the still-expired ids in the same statement (subquery +
+// RETURNING), so a job whose expires_at was just pushed into the future by a concurrent
+// POST /status is not in the subquery and survives — closing the select-then-delete race
+// (codex review). Such a job also drops out of the next batch's subquery, so the loop still
+// terminates.
 func (s *Store) RunExpirationPass(ctx context.Context, now time.Time) (ExpirationResult, error) {
 	nowStored := formatStored(now)
 	expired := []int{}
@@ -149,39 +139,32 @@ func (s *Store) RunExpirationPass(ctx context.Context, now time.Time) (Expiratio
 
 	for {
 		rows, err := s.write.QueryContext(ctx,
-			"SELECT id, group_id FROM jobs WHERE expires_at IS NOT NULL AND expires_at <= ? LIMIT 100",
+			"DELETE FROM jobs WHERE id IN "+
+				"(SELECT id FROM jobs WHERE expires_at IS NOT NULL AND expires_at <= ? LIMIT 100) "+
+				"RETURNING id, group_id",
 			nowStored)
 		if err != nil {
 			return ExpirationResult{}, err
 		}
-		var batch []int
+		n := 0
 		for rows.Next() {
 			var id, groupID int
 			if err := rows.Scan(&id, &groupID); err != nil {
 				_ = rows.Close()
 				return ExpirationResult{}, err
 			}
-			batch = append(batch, id)
+			expired = append(expired, id)
 			groupSet[groupID] = struct{}{}
+			n++
 		}
 		if err := rows.Err(); err != nil {
 			_ = rows.Close()
 			return ExpirationResult{}, err
 		}
 		_ = rows.Close()
-		if len(batch) == 0 {
+		if n == 0 {
 			break
 		}
-
-		args := make([]any, len(batch))
-		for i, id := range batch {
-			args[i] = id
-		}
-		if _, err := s.write.ExecContext(ctx,
-			"DELETE FROM jobs WHERE id IN ("+placeholders(len(batch))+")", args...); err != nil {
-			return ExpirationResult{}, err
-		}
-		expired = append(expired, batch...)
 	}
 
 	sort.Ints(expired)
@@ -193,16 +176,11 @@ func (s *Store) RunExpirationPass(ctx context.Context, now time.Time) (Expiratio
 	return ExpirationResult{ExpiredJobIDs: expired, AffectedGroupIDs: groups, ExpiredCount: len(expired)}, nil
 }
 
-func ids(jgs []jobGroup) []int {
+func sortedIDs(jgs []jobGroup) []int {
 	out := make([]int, len(jgs))
 	for i, jg := range jgs {
 		out[i] = jg.id
 	}
-	return out
-}
-
-func sortedIDs(jgs []jobGroup) []int {
-	out := ids(jgs)
 	sort.Ints(out)
 	return out
 }
