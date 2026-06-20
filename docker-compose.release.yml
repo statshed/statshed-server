@@ -1,51 +1,23 @@
-# StatShed — full stack from prebuilt images (no local build required).
+# StatShed — single prebuilt image (no local build).
 #
-# This is the easiest way to run a released version. Grab this file and
-# .env.example from a GitHub Release (https://github.com/statshed/statshed-server/releases),
-# then:
-#
-#   cp .env.example .env                                          # set SECRET_KEY
+#   cp .env.example .env                                                   # set SECRET_KEY
 #   STATSHED_VERSION=v0.1.0 docker compose -f docker-compose.release.yml up -d
 #   open http://localhost:7827
-#
-# STATSHED_VERSION (also settable in .env) selects the image tag; defaults to "latest".
 
 services:
-  backend:
-    image: ghcr.io/statshed/statshed-backend:${STATSHED_VERSION:-latest}
+  statshed:
+    image: ghcr.io/statshed/statshed-server:${STATSHED_VERSION:-latest}
     environment:
       - DATABASE_URL=${DATABASE_URL:-sqlite:////data/statshed.db}
       - SECRET_KEY=${SECRET_KEY:-}
       - DEBUG=${DEBUG:-false}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:7827}
     ports:
-      - "${BACKEND_PORT:-7828}:7828"
+      - "${STATSHED_PORT:-7827}:7828"
     volumes:
       - statshed-data:/data
     restart: unless-stopped
     healthcheck:
-      # 127.0.0.1 (not localhost): busybox/curl in the container may resolve
-      # localhost to ::1, but the servers listen on IPv4 only.
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:7828/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-
-  frontend:
-    image: ghcr.io/statshed/statshed-frontend:${STATSHED_VERSION:-latest}
-    environment:
-      - BACKEND_URL=http://backend:7828
-    ports:
-      - "${FRONTEND_PORT:-7827}:80"
-    depends_on:
-      backend:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      # 127.0.0.1 (not localhost): nginx listens on IPv4, but busybox wget may
-      # try ::1 first and get connection-refused.
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:7828/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
