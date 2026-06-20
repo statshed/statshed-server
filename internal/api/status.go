@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/statshed/statshed-server/internal/config"
+	"github.com/statshed/statshed-server/internal/realtime"
 	"github.com/statshed/statshed-server/internal/store"
 )
 
@@ -70,8 +71,23 @@ func (h *handlers) postStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// AIDEV-NOTE: Phase 5 publishes group_created (when result.GroupCreated) and
-	// status_update (carrying result.PreviousStatus) to the SSE hub here.
+	// A brand-new group emits group_created first (carrying the full group), then every
+	// status report emits status_update with the previous status (null on create).
+	if result.GroupCreated {
+		if group, found, gerr := h.store.GroupByName(r.Context(), result.Job.GroupName); gerr == nil && found {
+			realtime.Publish(h.hub, "group_created", map[string]any{
+				"schema_version": 1,
+				"group":          group.APIMap(),
+			})
+		}
+	}
+	realtime.Publish(h.hub, "status_update", map[string]any{
+		"schema_version":  1,
+		"job":             result.Job.APIMap(),
+		"group_id":        result.Job.GroupID,
+		"group_name":      result.Job.GroupName,
+		"previous_status": result.PreviousStatus,
+	})
 
 	resp := map[string]any{"success": true, "job": result.Job.APIMap()}
 	if warning != "" {

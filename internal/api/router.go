@@ -15,12 +15,13 @@ import (
 type handlers struct {
 	store *store.Store
 	cfg   config.Config
+	hub   *realtime.Hub
 }
 
 // NewRouter builds the HTTP handler: the global middleware stack plus the /api subrouter.
-// The hub backs GET /api/events (Phase 5.2 wires the handlers' real-time broadcasts).
+// The hub backs GET /api/events and the handlers' real-time broadcasts.
 func NewRouter(cfg config.Config, st *store.Store, hub *realtime.Hub) http.Handler {
-	h := &handlers{store: st, cfg: cfg}
+	h := &handlers{store: st, cfg: cfg, hub: hub}
 	r := chi.NewRouter()
 
 	// Middleware order, outer -> inner: requestLogger first so it records the final status

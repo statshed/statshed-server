@@ -19,6 +19,18 @@ type TimeoutResult struct {
 	StaleCount       int
 	TimeoutJobIDs    []int
 	StaleJobIDs      []int
+	// Per-type group ids (sorted) for the per-transition-type health_update events; not in
+	// the tick-hook JSON.
+	TimeoutGroupIDs []int
+	StaleGroupIDs   []int
+}
+
+// ExpiredJobInfo identifies one deleted job for its job_expired event.
+type ExpiredJobInfo struct {
+	ID        int
+	Name      string
+	GroupID   int
+	GroupName string
 }
 
 // ExpirationResult is the structured result of an expiration pass.
@@ -26,6 +38,8 @@ type ExpirationResult struct {
 	ExpiredJobIDs    []int
 	AffectedGroupIDs []int
 	ExpiredCount     int
+	// Per-job details (sorted by id) for job_expired events; not in the tick-hook JSON.
+	ExpiredJobs []ExpiredJobInfo
 }
 
 func (r TimeoutResult) APIMap() map[string]any {
@@ -93,6 +107,8 @@ func (s *Store) RunTimeoutPass(ctx context.Context, now time.Time) (TimeoutResul
 		StaleCount:       len(staleIDs),
 		TimeoutJobIDs:    timeoutIDs,
 		StaleJobIDs:      staleIDs,
+		TimeoutGroupIDs:  sortedGroupIDs(timeouts),
+		StaleGroupIDs:    sortedGroupIDs(stales),
 	}, nil
 }
 
@@ -134,14 +150,14 @@ func (s *Store) transitionOverdue(ctx context.Context, newStatus, baseCond, over
 // terminates.
 func (s *Store) RunExpirationPass(ctx context.Context, now time.Time) (ExpirationResult, error) {
 	nowStored := formatStored(now)
-	expired := []int{}
+	var jobs []ExpiredJobInfo
 	groupSet := map[int]struct{}{}
 
 	for {
 		rows, err := s.write.QueryContext(ctx,
 			"DELETE FROM jobs WHERE id IN "+
 				"(SELECT id FROM jobs WHERE expires_at IS NOT NULL AND expires_at <= ? LIMIT 100) "+
-				"RETURNING id, group_id",
+				"RETURNING id, group_id, name",
 			nowStored)
 		if err != nil {
 			return ExpirationResult{}, err
@@ -149,11 +165,12 @@ func (s *Store) RunExpirationPass(ctx context.Context, now time.Time) (Expiratio
 		n := 0
 		for rows.Next() {
 			var id, groupID int
-			if err := rows.Scan(&id, &groupID); err != nil {
+			var name string
+			if err := rows.Scan(&id, &groupID, &name); err != nil {
 				_ = rows.Close()
 				return ExpirationResult{}, err
 			}
-			expired = append(expired, id)
+			jobs = append(jobs, ExpiredJobInfo{ID: id, Name: name, GroupID: groupID})
 			groupSet[groupID] = struct{}{}
 			n++
 		}
@@ -167,13 +184,58 @@ func (s *Store) RunExpirationPass(ctx context.Context, now time.Time) (Expiratio
 		}
 	}
 
-	sort.Ints(expired)
+	// The groups themselves survive expiration, so resolve their names for the events.
+	names, err := s.groupNames(ctx, groupSet)
+	if err != nil {
+		return ExpirationResult{}, err
+	}
+	for i := range jobs {
+		jobs[i].GroupName = names[jobs[i].GroupID]
+	}
+	sort.Slice(jobs, func(i, j int) bool { return jobs[i].ID < jobs[j].ID })
+
+	expiredIDs := make([]int, len(jobs))
+	for i, j := range jobs {
+		expiredIDs[i] = j.ID
+	}
 	groups := make([]int, 0, len(groupSet))
 	for g := range groupSet {
 		groups = append(groups, g)
 	}
 	sort.Ints(groups)
-	return ExpirationResult{ExpiredJobIDs: expired, AffectedGroupIDs: groups, ExpiredCount: len(expired)}, nil
+	return ExpirationResult{
+		ExpiredJobIDs:    expiredIDs,
+		AffectedGroupIDs: groups,
+		ExpiredCount:     len(jobs),
+		ExpiredJobs:      jobs,
+	}, nil
+}
+
+// groupNames maps each of the given group ids to its name.
+func (s *Store) groupNames(ctx context.Context, ids map[int]struct{}) (map[int]string, error) {
+	names := make(map[int]string, len(ids))
+	if len(ids) == 0 {
+		return names, nil
+	}
+	args := make([]any, 0, len(ids))
+	for id := range ids {
+		args = append(args, id)
+	}
+	rows, err := s.read.QueryContext(ctx,
+		"SELECT id, name FROM groups WHERE id IN ("+placeholders(len(ids))+")", args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id int
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, err
+		}
+		names[id] = name
+	}
+	return names, rows.Err()
 }
 
 func sortedIDs(jgs []jobGroup) []int {

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/statshed/statshed-server/internal/background"
 	"github.com/statshed/statshed-server/internal/store"
 )
 
@@ -34,11 +35,13 @@ func (h *handlers) runChecks(w http.ResponseWriter, r *http.Request) {
 		h.internalError(w, "run timeout pass", err)
 		return
 	}
+	background.PublishTimeout(h.hub, timeoutResult, now)
 	expirationResult, err := h.store.RunExpirationPass(r.Context(), now)
 	if err != nil {
 		h.internalError(w, "run expiration pass", err)
 		return
 	}
+	background.PublishExpiration(h.hub, expirationResult, now)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"timeout_result":    timeoutResult.APIMap(),
 		"expiration_result": expirationResult.APIMap(),

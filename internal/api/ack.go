@@ -3,11 +3,13 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/statshed/statshed-server/internal/realtime"
 	"github.com/statshed/statshed-server/internal/store"
 )
 
@@ -39,7 +41,14 @@ func (h *handlers) ackJob(w http.ResponseWriter, r *http.Request) {
 		}
 		job.Acked = true
 		job.AckedAt = &now
-		// AIDEV-NOTE: Phase 5 emits jobs_acked (single) here.
+		realtime.Publish(h.hub, "jobs_acked", map[string]any{
+			"schema_version": 1,
+			"job_ids":        []int{id},
+			"group_id":       job.GroupID,
+			"group_name":     job.GroupName,
+			"acked_count":    1,
+			"timestamp":      store.FormatAPITime(now),
+		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"job": job.APIMap()})
 }
@@ -58,7 +67,14 @@ func (h *handlers) deleteJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, slugNotFound, fmt.Sprintf("Job with id %d not found", id))
 		return
 	}
-	// AIDEV-NOTE: Phase 5 emits job_deleted here.
+	realtime.Publish(h.hub, "job_deleted", map[string]any{
+		"schema_version": 1,
+		"job_id":         id,
+		"job_name":       job.Name,
+		"group_id":       job.GroupID,
+		"group_name":     job.GroupName,
+		"timestamp":      store.FormatAPITime(time.Now().UTC()),
+	})
 	writeJSON(w, http.StatusOK, map[string]any{
 		"deleted_job": job.APIMap(),
 		"group_id":    job.GroupID,
@@ -71,22 +87,44 @@ func (h *handlers) ackGroup(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ids, err := h.store.AckUnhealthy(r.Context(), &group.ID, time.Now().UTC())
+	now := time.Now().UTC()
+	ids, err := h.store.AckUnhealthy(r.Context(), &group.ID, now)
 	if err != nil {
 		h.internalError(w, "ack group", err)
 		return
 	}
-	// AIDEV-NOTE: Phase 5 emits jobs_acked (group) when len(ids) > 0.
+	if len(ids) > 0 {
+		sort.Ints(ids)
+		realtime.Publish(h.hub, "jobs_acked", map[string]any{
+			"schema_version": 1,
+			"job_ids":        ids,
+			"group_id":       group.ID,
+			"group_name":     group.Name,
+			"acked_count":    len(ids),
+			"timestamp":      store.FormatAPITime(now),
+		})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"acked_count": len(ids), "group": group.Name})
 }
 
 func (h *handlers) ackAll(w http.ResponseWriter, r *http.Request) {
-	ids, err := h.store.AckUnhealthy(r.Context(), nil, time.Now().UTC())
+	now := time.Now().UTC()
+	ids, err := h.store.AckUnhealthy(r.Context(), nil, now)
 	if err != nil {
 		h.internalError(w, "ack all", err)
 		return
 	}
-	// AIDEV-NOTE: Phase 5 emits jobs_acked (global, null group) when len(ids) > 0.
+	if len(ids) > 0 {
+		sort.Ints(ids)
+		realtime.Publish(h.hub, "jobs_acked", map[string]any{
+			"schema_version": 1,
+			"job_ids":        ids,
+			"group_id":       nil,
+			"group_name":     nil,
+			"acked_count":    len(ids),
+			"timestamp":      store.FormatAPITime(now),
+		})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"acked_count": len(ids)})
 }
 

@@ -83,7 +83,7 @@ func run(cfg config.Config) int {
 	// The 60s maintenance scheduler. Disabled under STATSHED_TEST_HOOKS so the contract
 	// suite drives transitions deterministically via POST /api/admin/run-checks.
 	if !cfg.TestHooks {
-		go background.New(st).Run(ctx)
+		go background.New(st, hub).Run(ctx)
 	}
 
 	slog.Info("statshed-server starting", "version", version, "addr", srv.Addr())

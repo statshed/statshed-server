@@ -7,21 +7,23 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/statshed/statshed-server/internal/realtime"
 	"github.com/statshed/statshed-server/internal/store"
 )
 
 // TickInterval is the production scheduler period (the Python job runs every 60s).
 const TickInterval = 60 * time.Second
 
-// Worker drives the maintenance passes on a fixed interval.
+// Worker drives the maintenance passes on a fixed interval and publishes their events.
 type Worker struct {
 	store    *store.Store
+	hub      *realtime.Hub
 	interval time.Duration
 }
 
 // New builds a worker ticking every TickInterval.
-func New(st *store.Store) *Worker {
-	return &Worker{store: st, interval: TickInterval}
+func New(st *store.Store, hub *realtime.Hub) *Worker {
+	return &Worker{store: st, hub: hub, interval: TickInterval}
 }
 
 // Run ticks until ctx is cancelled. The first pass runs after the first interval elapses
@@ -41,14 +43,18 @@ func (w *Worker) Run(ctx context.Context) {
 	}
 }
 
-// Tick runs one timeout/stale pass then one expiration pass. Errors are logged, not fatal —
-// a transient DB error should not kill the scheduler.
+// Tick runs one timeout/stale pass then one expiration pass and broadcasts their events.
+// Errors are logged, not fatal — a transient DB error should not kill the scheduler.
 func (w *Worker) Tick(ctx context.Context) {
 	now := time.Now().UTC()
-	if _, err := w.store.RunTimeoutPass(ctx, now); err != nil {
+	if tr, err := w.store.RunTimeoutPass(ctx, now); err != nil {
 		slog.Error("timeout pass", "err", err)
+	} else {
+		PublishTimeout(w.hub, tr, now)
 	}
-	if _, err := w.store.RunExpirationPass(ctx, now); err != nil {
+	if er, err := w.store.RunExpirationPass(ctx, now); err != nil {
 		slog.Error("expiration pass", "err", err)
+	} else {
+		PublishExpiration(w.hub, er, now)
 	}
 }

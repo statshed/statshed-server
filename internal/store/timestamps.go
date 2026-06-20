@@ -27,6 +27,10 @@ func formatAPI(t time.Time) string {
 	return t.UTC().Format(apiLayout)
 }
 
+// FormatAPITime exposes the whole-second API/event timestamp format to other packages (the
+// SSE event payloads' top-level "timestamp" uses the same render as the API).
+func FormatAPITime(t time.Time) string { return formatAPI(t) }
+
 // parseStored parses a stored timestamp (either microsecond or whole-second form), UTC.
 func parseStored(s string) (time.Time, error) {
 	t, err := time.Parse(parseLayout, s)
