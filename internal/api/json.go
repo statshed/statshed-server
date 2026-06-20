@@ -2,17 +2,36 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"math"
 	"net/http"
 )
 
+// writeIfTooLarge writes the 413 payload_too_large envelope and returns true when err is
+// the over-limit error from http.MaxBytesReader — i.e. a body that exceeded
+// MaxContentLength without a Content-Length the bodyLimit precheck could catch (e.g.
+// chunked transfer). Otherwise it returns false and writes nothing.
+func writeIfTooLarge(w http.ResponseWriter, err error) bool {
+	var maxErr *http.MaxBytesError
+	if errors.As(err, &maxErr) {
+		writeError(w, http.StatusRequestEntityTooLarge, slugPayloadTooBig,
+			"Request body exceeds the maximum allowed size")
+		return true
+	}
+	return false
+}
+
 // decodeJSONObject reads the request body as a JSON object. It returns ok=false (after
 // writing a 400 bad_request "JSON object required") for malformed JSON, a non-object, or
-// an empty object — matching Python's `not data or not isinstance(data, dict)`.
+// an empty object — matching Python's `not data or not isinstance(data, dict)`. An
+// over-limit body yields the 413 envelope instead.
 func decodeJSONObject(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		if writeIfTooLarge(w, err) {
+			return nil, false
+		}
 		writeError(w, http.StatusBadRequest, slugBadRequest, "JSON object required")
 		return nil, false
 	}

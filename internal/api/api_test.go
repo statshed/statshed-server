@@ -268,6 +268,58 @@ func TestRequestLoggerRecordsStatusAndDuration(t *testing.T) {
 	}
 }
 
+// fillReader yields `remaining` bytes of 'x' without a known length (forces chunked).
+type fillReader struct{ remaining int }
+
+func (f *fillReader) Read(p []byte) (int, error) {
+	if f.remaining <= 0 {
+		return 0, io.EOF
+	}
+	n := len(p)
+	if n > f.remaining {
+		n = f.remaining
+	}
+	for i := 0; i < n; i++ {
+		p[i] = 'x'
+	}
+	f.remaining -= n
+	return n, nil
+}
+
+func TestWriteIfTooLarge(t *testing.T) {
+	w := httptest.NewRecorder()
+	if !writeIfTooLarge(w, &http.MaxBytesError{Limit: 100}) {
+		t.Fatal("writeIfTooLarge(MaxBytesError) = false, want true")
+	}
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("status = %d, want 413", w.Code)
+	}
+	if writeIfTooLarge(httptest.NewRecorder(), io.ErrUnexpectedEOF) {
+		t.Error("writeIfTooLarge(non-MaxBytes) = true, want false")
+	}
+}
+
+func TestBodyLimitReturns413ForUnsizedBody(t *testing.T) {
+	srv := httptest.NewServer(testRouter(t))
+	defer srv.Close()
+
+	// A chunked body (unknown length) over the limit bypasses the Content-Length
+	// precheck and must still 413 via MaxBytesReader.
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/status",
+		&fillReader{remaining: config.MaxContentLength + 4096})
+	req.Header.Set("Content-Type", "application/json")
+	req.ContentLength = -1 // unknown length -> chunked
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413", resp.StatusCode)
+	}
+}
+
 func containsToken(values []string, token string) bool {
 	for _, v := range values {
 		for _, part := range strings.Split(v, ",") {

@@ -96,6 +96,9 @@ func (h *handlers) parseStatusRequest(w http.ResponseWriter, r *http.Request) (d
 
 func (h *handlers) parseMultipart(w http.ResponseWriter, r *http.Request) (map[string]any, *store.LogInput, string, bool) {
 	if err := r.ParseMultipartForm(config.MaxContentLength); err != nil {
+		if writeIfTooLarge(w, err) {
+			return nil, nil, "", false
+		}
 		writeError(w, http.StatusBadRequest, slugBadRequest, "Invalid multipart form")
 		return nil, nil, "", false
 	}
