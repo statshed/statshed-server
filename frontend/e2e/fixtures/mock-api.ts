@@ -120,17 +120,20 @@ export async function mockApi(page: Page): Promise<void> {
     groupConfigs: new Map(),
   }
 
-  // AIDEV-NOTE: Match by pathname PREFIX, not a '**/api/**' glob. Under the Vite
-  // dev server the app's own ES modules are served from paths like
-  // `/src/api/client.ts`, which a loose `**/api/**` glob would wrongly intercept
-  // (returning 501 and preventing the app from mounting). The client only ever
-  // fetches `/api/...` and Socket.IO only hits `/socket.io/...`.
-  await page.route(
-    (url) => url.pathname.startsWith('/socket.io'),
-    (route) => route.abort()
-  )
+  // AIDEV-NOTE: Match by pathname PREFIX, not a '**/api/**' glob. Under the Vite dev server
+  // the app's own ES modules are served from paths like `/src/api/client.ts`, which a loose
+  // `**/api/**` glob would wrongly intercept (501 -> the app never mounts). The client only
+  // ever fetches `/api/...`; the realtime stream is GET /api/events.
   await page.route(
     (url) => url.pathname.startsWith('/api/'),
     (route, request) => handle(route, request, state)
+  )
+  // AIDEV-NOTE: Abort the SSE stream — there is no server in the e2e environment. Playwright
+  // matches routes in reverse registration order, so this (registered LAST) overrides the
+  // /api/ handler above for /api/events specifically. The app tolerates a dropped stream:
+  // it shows the "Disconnected" badge and relies on its mount fetches.
+  await page.route(
+    (url) => url.pathname === '/api/events',
+    (route) => route.abort()
   )
 }

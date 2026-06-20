@@ -432,15 +432,30 @@ Group-specific timeout overrides take precedence over global settings.
 
 ---
 
-## WebSocket Events
+## Real-Time Events (SSE)
 
-The server uses Socket.IO for real-time updates. Connect to the same host/port.
+The server streams real-time updates over [Server-Sent Events](https://developer.mozilla.org/docs/Web/API/Server-sent_events). Connect an `EventSource` to `GET /api/events` (same host/port). The stream is `text/event-stream`, is never compressed, and emits a `: ping` comment heartbeat about every 25 seconds. `EventSource` reconnects automatically after a drop, so re-fetch your data on reconnect to recover any events missed during the outage.
 
-| Event | Description | Payload |
-|-------|-------------|---------|
-| `group_created` | New group was created | `{ "group": { ... } }` |
-| `status_update` | Job status was updated | `{ "job": { ... } }` |
-| `health_update` | Signal to refresh health data | `{}` |
+```js
+const events = new EventSource('/api/events')
+events.addEventListener('status_update', (e) => {
+  const data = JSON.parse(e.data)
+  // refresh the affected views
+})
+```
+
+Every event's `data` is a JSON object whose `schema_version` is `1`; id arrays are sorted ascending and timestamps are whole-second UTC (`YYYY-MM-DDTHH:MM:SSZ`).
+
+| Event | When | Payload |
+|-------|------|---------|
+| `status_update` | A job was created or updated | `{ "schema_version": 1, "job": { ... }, "group_id": int, "group_name": str, "previous_status": str\|null }` |
+| `group_created` | A new group was created (its first job report) | `{ "schema_version": 1, "group": { ... } }` |
+| `jobs_acked` | One or more jobs were acknowledged | `{ "schema_version": 1, "job_ids": [int], "group_id": int\|null, "group_name": str\|null, "acked_count": int, "timestamp": str }` |
+| `job_deleted` | A job was deleted | `{ "schema_version": 1, "job_id": int, "job_name": str, "group_id": int, "group_name": str, "timestamp": str }` |
+| `health_update` | The background worker transitioned jobs | `{ "schema_version": 1, "affected_job_ids": [int], "affected_group_ids": [int], "transition_type": "timeout"\|"stale", "timestamp": str }` |
+| `job_expired` | A job passed its expiration and was removed | `{ "schema_version": 1, "job_id": int, "job_name": str, "group_id": int, "group_name": str, "timestamp": str }` |
+
+On a global ack-all, `jobs_acked` has `group_id`/`group_name` of `null`.
 
 ---
 

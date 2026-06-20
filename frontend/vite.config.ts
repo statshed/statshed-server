@@ -22,14 +22,11 @@ export default defineConfig(({ mode }) => ({
     port: 7827,
     proxy: {
       '/api': {
-        // AIDEV-NOTE: No rewrite — the backend serves the REST API under /api (app.py Blueprint), so forward /api/* unchanged.
+        // AIDEV-NOTE: No rewrite — the statshed-server serves the REST API and the SSE
+        // stream (GET /api/events) under /api, so forward /api/* unchanged. SSE rides this
+        // same proxy entry (http-proxy streams it); the old /socket.io entry is gone.
         target: 'http://localhost:7828',
         changeOrigin: true,
-      },
-      '/socket.io': {
-        target: 'http://localhost:7828',
-        changeOrigin: true,
-        ws: true,
       },
     },
   },
