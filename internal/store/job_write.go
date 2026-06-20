@@ -34,11 +34,13 @@ type UpsertResult struct {
 	PreviousStatus *string // nil on create
 }
 
-// scanCols is the column list (with has_log derived, log_content blob NOT loaded) used to
-// read a job back in the API shape.
-const scanCols = "id, group_id, name, status, message, acked, acked_at, expires_at, " +
-	"(log_content IS NOT NULL), log_line_count, log_truncated, log_updated_at, " +
-	"updated_at, created_at"
+// jobColumns selects a job in the API shape: has_log is derived and the log_content blob
+// is never loaded (spec §5.1). jobFrom joins groups so each row carries its group_name.
+const jobColumns = "j.id, j.group_id, g.name, j.name, j.status, j.message, j.acked, " +
+	"j.acked_at, j.expires_at, (j.log_content IS NOT NULL), j.log_line_count, " +
+	"j.log_truncated, j.log_updated_at, j.updated_at, j.created_at"
+
+const jobFrom = "FROM jobs j JOIN groups g ON g.id = j.group_id"
 
 // UpsertJob creates or updates the (group, job) pair atomically and returns the rendered
 // job. Writes go through the serialized write handle, so concurrent POSTs are processed
@@ -107,8 +109,9 @@ func (s *Store) UpsertJob(ctx context.Context, p UpsertParams, now time.Time) (U
 	}
 
 	job, err := scanJob(tx.QueryRowContext(ctx,
-		"SELECT "+scanCols+" FROM jobs WHERE group_id = ? AND name = ?", groupID, p.JobName,
-	), p.GroupName)
+		"SELECT "+jobColumns+" "+jobFrom+" WHERE j.group_id = ? AND j.name = ?",
+		groupID, p.JobName,
+	))
 	if err != nil {
 		return UpsertResult{}, err
 	}
@@ -155,16 +158,15 @@ func updateJobRow(ctx context.Context, tx *sql.Tx, jobID int, p UpsertParams, no
 	return err
 }
 
-// scanJob reads a job row (in scanCols order) into the API-shaped Job.
-func scanJob(row interface{ Scan(...any) error }, groupName string) (Job, error) {
+// scanJob reads a job row (in jobColumns order) into the API-shaped Job.
+func scanJob(row interface{ Scan(...any) error }) (Job, error) {
 	var j Job
-	j.GroupName = groupName
 	var message, ackedAt, expiresAt, logUpdatedAt sql.NullString
 	var logLineCount sql.NullInt64
 	var acked, hasLog, logTruncated int
 	var updatedAt, createdAt string
 
-	if err := row.Scan(&j.ID, &j.GroupID, &j.Name, &j.Status, &message, &acked,
+	if err := row.Scan(&j.ID, &j.GroupID, &j.GroupName, &j.Name, &j.Status, &message, &acked,
 		&ackedAt, &expiresAt, &hasLog, &logLineCount, &logTruncated, &logUpdatedAt,
 		&updatedAt, &createdAt); err != nil {
 		return Job{}, err

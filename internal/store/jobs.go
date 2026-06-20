@@ -1,6 +1,9 @@
 package store
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // ValidStatuses are the five job statuses, in canonical order (behavioral-map §5).
 var ValidStatuses = []string{"success", "error", "progress", "timeout", "stale"}
@@ -96,4 +99,87 @@ func healthFromCounts(total, unhealthy, inProgress int) string {
 	default:
 		return "healthy"
 	}
+}
+
+// JobFilter selects and pages jobs for GET /api/jobs.
+type JobFilter struct {
+	Statuses []string // empty -> no status filter
+	Limit    *int     // nil -> no limit (return all)
+	Offset   int
+}
+
+// JobList is a page of jobs plus the full matching total.
+type JobList struct {
+	Jobs  []Job
+	Total int
+}
+
+// ListJobs returns jobs ordered updated_at DESC (id DESC tiebreak), optionally filtered by
+// status and windowed by limit/offset. log_content is never selected (spec §5.1). Total is
+// the full matching count; on the default (no limit, no offset) path it is len(jobs) with
+// NO extra COUNT query (spec §5.1).
+func (s *Store) ListJobs(ctx context.Context, f JobFilter) (JobList, error) {
+	where, whereArgs := statusWhere(f.Statuses)
+
+	query := "SELECT " + jobColumns + " " + jobFrom + where +
+		" ORDER BY j.updated_at DESC, j.id DESC"
+	args := append([]any(nil), whereArgs...)
+	switch {
+	case f.Limit != nil:
+		query += " LIMIT ?"
+		args = append(args, *f.Limit)
+	case f.Offset > 0:
+		query += " LIMIT -1" // SQLite requires a LIMIT before OFFSET
+	}
+	if f.Offset > 0 {
+		query += " OFFSET ?"
+		args = append(args, f.Offset)
+	}
+
+	rows, err := s.read.QueryContext(ctx, query, args...)
+	if err != nil {
+		return JobList{}, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	jobs := make([]Job, 0)
+	for rows.Next() {
+		j, err := scanJob(rows)
+		if err != nil {
+			return JobList{}, err
+		}
+		jobs = append(jobs, j)
+	}
+	if err := rows.Err(); err != nil {
+		return JobList{}, err
+	}
+
+	total := len(jobs)
+	if f.Limit != nil || f.Offset > 0 {
+		if err := s.read.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM jobs j"+where, whereArgs...,
+		).Scan(&total); err != nil {
+			return JobList{}, err
+		}
+	}
+	return JobList{Jobs: jobs, Total: total}, nil
+}
+
+// statusWhere builds a `WHERE j.status IN (...)` clause (empty when no statuses).
+func statusWhere(statuses []string) (string, []any) {
+	if len(statuses) == 0 {
+		return "", nil
+	}
+	args := make([]any, len(statuses))
+	for i, st := range statuses {
+		args[i] = st
+	}
+	return " WHERE j.status IN (" + placeholders(len(statuses)) + ")", args
+}
+
+func placeholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strings.Repeat("?, ", n-1) + "?"
 }

@@ -42,6 +42,7 @@ func NewRouter(cfg config.Config, st *store.Store) http.Handler {
 		apiRouter.Use(corsMiddleware(cfg.CORSOrigins))
 		apiRouter.Get("/health", h.health)
 		apiRouter.Post("/status", h.postStatus)
+		apiRouter.Get("/jobs", h.listJobs)
 		// Unknown /api/* paths get the JSON 404 envelope (never SPA HTML).
 		apiRouter.NotFound(jsonNotFound)
 		apiRouter.MethodNotAllowed(jsonMethodNotAllowed)
