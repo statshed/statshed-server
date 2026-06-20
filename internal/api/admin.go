@@ -22,6 +22,29 @@ func (h *handlers) getAdminStats(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// runChecks is the guarded test-only tick hook (POST /api/admin/run-checks): one timeout
+// pass then one expiration pass, returning both structured results. Registered ONLY when
+// STATSHED_TEST_HOOKS is set, so the contract suite can drive background transitions
+// deterministically instead of waiting on the 60s scheduler (disabled under the same flag).
+// When off, the route is absent and falls through to the JSON 404.
+func (h *handlers) runChecks(w http.ResponseWriter, r *http.Request) {
+	now := time.Now().UTC()
+	timeoutResult, err := h.store.RunTimeoutPass(r.Context(), now)
+	if err != nil {
+		h.internalError(w, "run timeout pass", err)
+		return
+	}
+	expirationResult, err := h.store.RunExpirationPass(r.Context(), now)
+	if err != nil {
+		h.internalError(w, "run expiration pass", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"timeout_result":    timeoutResult.APIMap(),
+		"expiration_result": expirationResult.APIMap(),
+	})
+}
+
 func (h *handlers) adminCleanup(w http.ResponseWriter, r *http.Request) {
 	data, ok := readJSONObject(w, r) // lenient: {} is allowed, then validated below
 	if !ok {

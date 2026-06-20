@@ -53,6 +53,10 @@ func NewRouter(cfg config.Config, st *store.Store) http.Handler {
 		apiRouter.Post("/ack-all", h.ackAll)
 		apiRouter.Get("/admin/stats", h.getAdminStats)
 		apiRouter.Delete("/admin/cleanup", h.adminCleanup)
+		if cfg.TestHooks {
+			// Guarded test-only tick hook; absent (-> JSON 404) in production.
+			apiRouter.Post("/admin/run-checks", h.runChecks)
+		}
 		apiRouter.Get("/groups", h.listGroups)
 		apiRouter.Get("/groups/{name}/jobs", h.getGroupJobs)
 		apiRouter.Get("/groups/{name}/jobs/{job}/log", h.getJobLog)

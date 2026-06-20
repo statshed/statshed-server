@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/statshed/statshed-server/internal/api"
+	"github.com/statshed/statshed-server/internal/background"
 	"github.com/statshed/statshed-server/internal/config"
 	"github.com/statshed/statshed-server/internal/store"
 )
@@ -76,6 +77,12 @@ func run(cfg config.Config) int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// The 60s maintenance scheduler. Disabled under STATSHED_TEST_HOOKS so the contract
+	// suite drives transitions deterministically via POST /api/admin/run-checks.
+	if !cfg.TestHooks {
+		go background.New(st).Run(ctx)
+	}
 
 	slog.Info("statshed-server starting", "version", version, "addr", srv.Addr())
 	if err := srv.Run(ctx); err != nil {
