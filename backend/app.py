@@ -23,6 +23,7 @@ from flask import (
     request,
     send_from_directory,
 )
+from flask_compress import Compress
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from sqlalchemy import func
@@ -50,6 +51,8 @@ app.config["MAX_CONTENT_LENGTH"] = Config.MAX_CONTENT_LENGTH
 
 # Initialize CORS
 CORS(app, origins=Config.CORS_ORIGINS)
+# AIDEV-NOTE: gzip responses (replaces nginx's gzip now that Flask serves assets).
+Compress(app)
 
 # Initialize Socket.IO with gevent for WebSocket support
 # AIDEV-NOTE: async_mode='gevent' enables true WebSocket connections (not just long-polling).
