@@ -22,27 +22,45 @@ func writeIfTooLarge(w http.ResponseWriter, err error) bool {
 	return false
 }
 
-// decodeJSONObject reads the request body as a JSON object. It returns ok=false (after
-// writing a 400 bad_request "JSON object required") for malformed JSON, a non-object, or
-// an empty object — matching Python's `not data or not isinstance(data, dict)`. An
-// over-limit body yields the 413 envelope instead.
-func decodeJSONObject(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
+func writeBadJSON(w http.ResponseWriter) {
+	writeError(w, http.StatusBadRequest, slugBadRequest, "JSON object required")
+}
+
+// readJSONObject reads the body as a JSON object (any object, including empty). ok=false
+// (after writing a 400 bad_request, or 413 for an over-limit body) for malformed JSON or a
+// non-object. This is the lenient form used by admin cleanup, which validates required
+// fields rather than rejecting {} up front (Python's `data is None or not dict`).
+func readJSONObject(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		if writeIfTooLarge(w, err) {
 			return nil, false
 		}
-		writeError(w, http.StatusBadRequest, slugBadRequest, "JSON object required")
+		writeBadJSON(w)
 		return nil, false
 	}
 	var parsed any
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		writeError(w, http.StatusBadRequest, slugBadRequest, "JSON object required")
+		writeBadJSON(w)
 		return nil, false
 	}
 	m, isObj := parsed.(map[string]any)
-	if !isObj || len(m) == 0 {
-		writeError(w, http.StatusBadRequest, slugBadRequest, "JSON object required")
+	if !isObj {
+		writeBadJSON(w)
+		return nil, false
+	}
+	return m, true
+}
+
+// decodeJSONObject reads the body as a NON-EMPTY JSON object, rejecting an empty object too
+// (Python's `not data or not isinstance(data, dict)`). Used by /status and /config.
+func decodeJSONObject(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
+	m, ok := readJSONObject(w, r)
+	if !ok {
+		return nil, false
+	}
+	if len(m) == 0 {
+		writeBadJSON(w)
 		return nil, false
 	}
 	return m, true

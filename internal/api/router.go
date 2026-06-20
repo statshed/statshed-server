@@ -47,6 +47,8 @@ func NewRouter(cfg config.Config, st *store.Store) http.Handler {
 		apiRouter.Delete("/jobs/{id:[0-9]+}", h.deleteJob)
 		apiRouter.Post("/groups/{name}/ack", h.ackGroup)
 		apiRouter.Post("/ack-all", h.ackAll)
+		apiRouter.Get("/admin/stats", h.getAdminStats)
+		apiRouter.Delete("/admin/cleanup", h.adminCleanup)
 		apiRouter.Get("/groups", h.listGroups)
 		apiRouter.Get("/groups/{name}/jobs", h.getGroupJobs)
 		apiRouter.Get("/groups/{name}/jobs/{job}/log", h.getJobLog)

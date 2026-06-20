@@ -1,0 +1,87 @@
+package api
+
+import (
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/statshed/statshed-server/internal/store"
+)
+
+func (h *handlers) getAdminStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.store.Stats(r.Context())
+	if err != nil {
+		h.internalError(w, "admin stats", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"total_jobs":          stats.TotalJobs,
+		"total_groups":        stats.TotalGroups,
+		"jobs_by_status":      stats.JobsByStatus,
+		"database_size_bytes": stats.DatabaseSizeBytes,
+	})
+}
+
+func (h *handlers) adminCleanup(w http.ResponseWriter, r *http.Request) {
+	data, ok := readJSONObject(w, r) // lenient: {} is allowed, then validated below
+	if !ok {
+		return
+	}
+
+	rawDays, present := data["older_than_days"]
+	if !present || rawDays == nil {
+		writeFieldError(w, http.StatusBadRequest, slugValidation,
+			"older_than_days is required", "older_than_days")
+		return
+	}
+	days, valid := asConfigInt(rawDays)
+	if !valid || days < 1 {
+		writeFieldError(w, http.StatusBadRequest, slugValidation,
+			"older_than_days must be a positive integer", "older_than_days")
+		return
+	}
+
+	statuses := []string{"stale", "timeout"} // default
+	if raw, present := data["statuses"]; present {
+		arr, isArr := raw.([]any)
+		if !isArr {
+			writeFieldError(w, http.StatusBadRequest, slugValidation,
+				"statuses must be an array", "statuses")
+			return
+		}
+		statuses = make([]string, 0, len(arr))
+		for _, item := range arr {
+			s, isStr := item.(string)
+			if !isStr || !store.IsValidStatus(s) {
+				writeFieldError(w, http.StatusBadRequest, slugValidation,
+					fmt.Sprintf("Invalid status '%v'. Must be one of: %s", item, sortedStatusList),
+					"statuses")
+				return
+			}
+			statuses = append(statuses, s)
+		}
+	}
+
+	dryRun := false
+	if raw, present := data["dry_run"]; present {
+		b, isBool := raw.(bool)
+		if !isBool {
+			writeFieldError(w, http.StatusBadRequest, slugValidation,
+				"dry_run must be a boolean", "dry_run")
+			return
+		}
+		dryRun = b
+	}
+
+	cutoff := time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour)
+	result, err := h.store.AdminCleanup(r.Context(), statuses, cutoff, dryRun)
+	if err != nil {
+		h.internalError(w, "admin cleanup", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"deleted_jobs":   result.DeletedJobs,
+		"deleted_groups": result.DeletedGroups,
+		"dry_run":        dryRun,
+	})
+}
