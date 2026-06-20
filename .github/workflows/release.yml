@@ -1,7 +1,7 @@
-# Release pipeline. Pushing a semver tag (e.g. v0.1.0) builds multi-arch Docker
-# images for the backend and frontend, pushes them to GitHub Container Registry
-# (ghcr.io/statshed/*), and publishes a GitHub Release with a ready-to-run compose
-# file so users can `docker compose up` without building from source.
+# Release pipeline. Pushing a semver tag (e.g. v0.1.0) builds a multi-arch Docker
+# image, pushes it to GitHub Container Registry (ghcr.io/statshed/statshed-server),
+# and publishes a GitHub Release with a ready-to-run compose file so users can
+# `docker compose up` without building from source.
 #
 #   git tag v0.1.0 && git push origin v0.1.0
 
@@ -16,22 +16,9 @@ permissions:
   packages: write # push images to GHCR
 
 jobs:
-  images:
-    name: Build & push ${{ matrix.name }} image
+  image:
+    name: Build & push statshed-server image
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: backend
-            context: ./backend
-            image: ghcr.io/statshed/statshed-backend
-            build_args: ''
-          - name: frontend
-            context: ./frontend
-            image: ghcr.io/statshed/statshed-frontend
-            # Empty -> same-origin bundle; nginx proxies to the backend at runtime.
-            build_args: 'VITE_BACKEND_URL='
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,7 +40,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ matrix.image }}
+          images: ghcr.io/statshed/statshed-server
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -62,18 +49,17 @@ jobs:
       - name: Build & push
         uses: docker/build-push-action@v6
         with:
-          context: ${{ matrix.context }}
+          context: .
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: ${{ matrix.build_args }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   release:
     name: Publish GitHub Release
-    needs: images
+    needs: image
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -97,10 +83,9 @@ jobs:
           body: |
             ## StatShed ${{ github.ref_name }}
 
-            Multi-arch container images (`linux/amd64`, `linux/arm64`):
+            Multi-arch container image (`linux/amd64`, `linux/arm64`):
 
-            - `ghcr.io/statshed/statshed-backend:${{ github.ref_name }}`
-            - `ghcr.io/statshed/statshed-frontend:${{ github.ref_name }}`
+            - `ghcr.io/statshed/statshed-server:${{ github.ref_name }}`
 
             ### Run it
 
