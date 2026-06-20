@@ -43,6 +43,7 @@ def test_rapid_job_creation_same_group(client: httpx.Client) -> None:
         )
         assert resp.status_code == 201
     jobs = client.get("/api/groups/rapid/jobs").json()["jobs"]
+    assert len(jobs) == 10  # exactly 10 rows (a set comparison alone would hide a dup)
     assert {j["name"] for j in jobs} == {f"job-{i}" for i in range(10)}
 
 
@@ -115,4 +116,6 @@ def test_concurrent_same_group_same_job(client: httpx.Client) -> None:
     ]
     responses = _concurrent_posts(client, payloads)
     assert all(r.status_code == 201 for r in responses)
-    assert len(client.get("/api/groups/race2/jobs").json()["jobs"]) == 1
+    groups = [g for g in client.get("/api/groups").json()["groups"] if g["name"] == "race2"]
+    assert len(groups) == 1  # exactly one group row...
+    assert len(client.get("/api/groups/race2/jobs").json()["jobs"]) == 1  # ...and one job
