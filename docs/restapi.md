@@ -1,10 +1,13 @@
 # StatShed REST API Reference
 
-StatShed is a status dashboard application for tracking job statuses across groups. This document describes the REST API provided by the StatShed backend server.
+StatShed is a status dashboard application for tracking job statuses across groups. This document describes the REST API provided by the StatShed server.
 
 ## Base URL
 
-By default, the server runs at `http://127.0.0.1:7828`. Configure via `HOST` and `PORT` environment variables.
+By default, the server runs at `http://127.0.0.1:7828`. Configure via `HOST` and `PORT`
+environment variables. All endpoints below are served under the `/api` prefix — for example
+the health endpoint is `GET /api/health`. (In the bundled Docker deployment the browser and
+CLI clients reach the app on host port `7827`.)
 
 ## Content Type
 
@@ -21,7 +24,7 @@ No authentication is currently required for API endpoints.
 
 ### Health
 
-#### GET /health
+#### GET /api/health
 
 Returns an overall health summary across all groups.
 
@@ -54,7 +57,7 @@ Returns an overall health summary across all groups.
 
 ### Status Submission
 
-#### POST /status
+#### POST /api/status
 
 Submit or update a job status. Creates the group and job if they don't exist.
 
@@ -82,7 +85,7 @@ Submit or update a job status. Creates the group and job if they don't exist.
 **Example Request (multipart/form-data with log file):**
 
 ```bash
-curl -X POST http://127.0.0.1:7828/status \
+curl -X POST http://127.0.0.1:7828/api/status \
   -F "group=nightly-builds" \
   -F "job=backend-tests" \
   -F "status=error" \
@@ -122,7 +125,7 @@ curl -X POST http://127.0.0.1:7828/status \
 
 ### Jobs
 
-#### GET /jobs
+#### GET /api/jobs
 
 List jobs across all groups, optionally filtered by status. Used by the dashboard
 health-card click-through to show jobs in a given state.
@@ -170,7 +173,7 @@ full matching count. Jobs are ordered by `updated_at` descending (most recent fi
 
 ### Groups
 
-#### GET /groups
+#### GET /api/groups
 
 List all groups with health summary information.
 
@@ -201,7 +204,7 @@ List all groups with health summary information.
 
 ---
 
-#### GET /groups/{name}/jobs
+#### GET /api/groups/{name}/jobs
 
 Get jobs within a specific group, optionally paginated.
 
@@ -255,7 +258,7 @@ descending (most recent first).
 
 ---
 
-#### GET /groups/{name}/jobs/{job_name}/log
+#### GET /api/groups/{name}/jobs/{job_name}/log
 
 Retrieve log content for a specific job.
 
@@ -293,7 +296,7 @@ Retrieve log content for a specific job.
 
 ### Configuration
 
-#### GET /config
+#### GET /api/config
 
 Retrieve global configuration settings.
 
@@ -308,7 +311,7 @@ Retrieve global configuration settings.
 
 ---
 
-#### PUT /config
+#### PUT /api/config
 
 Update global configuration settings.
 
@@ -342,7 +345,7 @@ Update global configuration settings.
 
 ---
 
-#### GET /groups/{name}/config
+#### GET /api/groups/{name}/config
 
 Get group-specific configuration overrides.
 
@@ -369,7 +372,7 @@ Get group-specific configuration overrides.
 
 ---
 
-#### PUT /groups/{name}/config
+#### PUT /api/groups/{name}/config
 
 Update group-specific configuration overrides.
 
@@ -474,13 +477,17 @@ On a global ack-all, `jobs_acked` has `group_id`/`group_name` of `null`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | `sqlite:///statshed.db` | SQLAlchemy database connection URL |
-| `SECRET_KEY` | (dev key) | Flask secret key for sessions |
-| `DEBUG` | `false` | Enable Flask debug mode |
-| `HOST` | `127.0.0.1` | Server bind address |
-| `PORT` | `5000` | Server port |
-| `LOG_UPLOAD_ENABLED` | `true` | Enable/disable log file uploads |
-| `MAX_LOG_LINES` | `1000` | Maximum lines to store per log (excess is truncated) |
+| `DATABASE_URL` | `sqlite:///statshed.db` | SQLite database path (sqlite-only; 3-slash = relative, 4-slash = absolute). The server is **fresh-DB-only** — it creates and migrates an empty database and refuses a pre-existing/incompatible one. |
+| `HOST` | `127.0.0.1` | Server bind address (`::` to bind dual-stack in a container) |
+| `PORT` | `7828` | Server port |
+| `DEBUG` | `false` | `true` raises the `log/slog` level to DEBUG (verbose request logging) |
+| `CORS_ORIGINS` | _(localhost)_ | Comma-separated browser origins allowed to call the API (same-origin needs none) |
+| `LOG_UPLOAD_ENABLED` | `true` | Accept log uploads on `POST /api/status` |
+| `MAX_LOG_LINES` | `1000` | Maximum lines stored per log (excess is truncated) |
+| `MAX_JOBS_PAGE_SIZE` | `500` | Server cap on the `GET /api/jobs` `limit` page size |
+| `STATIC_DIR` | `./static` | Directory to serve the SPA from instead of the embedded build |
+| `STATIC_DISABLED` | `false` | `1`/`true` disables SPA serving (API-only) |
+| `SECRET_KEY` | _(unused)_ | Accepted but ignored by the Go server (kept for legacy `.env` compatibility) |
 
 ---
 
