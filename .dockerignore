@@ -1,8 +1,12 @@
 .git
 .github
 docs
+loop
+backend
+contract
 .remember
 .codex
+/statshed-server
 **/node_modules
 **/.venv
 **/__pycache__
