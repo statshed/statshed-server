@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -21,6 +22,14 @@ func (h *Hub) ServeEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no") // ask reverse proxies not to buffer the stream
 	w.WriteHeader(http.StatusOK)
+	// AIDEV-NOTE: Push an initial comment immediately. A proxy that buffers the response
+	// until the first byte of BODY (the Vite dev proxy, and some production proxies) would
+	// otherwise hold back the headers, so the client's EventSource onopen — which fires on
+	// data, not just status — is delayed until the first event or the ~25s heartbeat. This
+	// byte opens the stream promptly (and is ignored as an SSE comment).
+	if _, err := io.WriteString(w, ": connected\n\n"); err != nil {
+		return
+	}
 	flusher.Flush()
 
 	ch := h.register()

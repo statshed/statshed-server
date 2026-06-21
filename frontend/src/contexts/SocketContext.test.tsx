@@ -15,17 +15,27 @@ import { createTestQueryClient } from '@/test/utils'
 import { queryKeys } from '@/lib/constants'
 import { useSocket } from '@/hooks/useSocket'
 
-// Capture the listeners + lifecycle callbacks the provider registers on its EventSource.
+// Capture the listeners + lifecycle callbacks the provider registers on its EventSource,
+// plus how many EventSources it has created (to assert reconnection).
 const { mock } = vi.hoisted(() => {
   const mock: {
     handlers: Record<string, (e: { data: string }) => void>
     onopen?: () => void
     onerror?: () => void
-    closed: boolean
-  } = { handlers: {}, closed: false }
+    readyState: number
+    instances: number
+  } = { handlers: {}, readyState: 1, instances: 0 }
 
   class MockEventSource {
-    constructor(public url: string) {}
+    static readonly CONNECTING = 0
+    static readonly OPEN = 1
+    static readonly CLOSED = 2
+    constructor(public url: string) {
+      mock.instances++
+    }
+    get readyState() {
+      return mock.readyState
+    }
     addEventListener(event: string, cb: (e: { data: string }) => void) {
       mock.handlers[event] = cb
     }
@@ -35,9 +45,7 @@ const { mock } = vi.hoisted(() => {
     set onerror(cb: () => void) {
       mock.onerror = cb
     }
-    close() {
-      mock.closed = true
-    }
+    close() {}
   }
   ;(globalThis as unknown as { EventSource: unknown }).EventSource = MockEventSource
   return { mock }
@@ -50,6 +58,8 @@ function resetMock() {
   for (const key of Object.keys(mock.handlers)) delete mock.handlers[key]
   mock.onopen = undefined
   mock.onerror = undefined
+  mock.readyState = 1 // OPEN
+  mock.instances = 0
 }
 
 function renderProvider(children?: ReactNode) {
@@ -138,5 +148,46 @@ describe('SocketContext connection badge', () => {
     expect(getByTestId('status').textContent).toBe('on')
     act(() => mock.onerror?.())
     expect(getByTestId('status').textContent).toBe('off')
+  })
+})
+
+describe('SocketContext permanent-close recovery', () => {
+  beforeEach(resetMock)
+
+  it('recreates the EventSource after a permanent close (proxy 5xx during a backend restart)', () => {
+    vi.useFakeTimers()
+    try {
+      renderProvider()
+      expect(mock.instances).toBe(1)
+
+      // The browser closed the stream permanently (a non-200 reconnect response).
+      mock.readyState = 2 // CLOSED
+      act(() => mock.onerror?.())
+
+      // A reconnect is scheduled; advancing past the delay creates a fresh EventSource.
+      act(() => {
+        vi.advanceTimersByTime(1500)
+      })
+      expect(mock.instances).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not recreate while the browser is still auto-reconnecting (CONNECTING)', () => {
+    vi.useFakeTimers()
+    try {
+      renderProvider()
+      expect(mock.instances).toBe(1)
+
+      mock.readyState = 0 // CONNECTING — the browser retries on its own
+      act(() => mock.onerror?.())
+      act(() => {
+        vi.advanceTimersByTime(1500)
+      })
+      expect(mock.instances).toBe(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

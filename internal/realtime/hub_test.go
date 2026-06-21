@@ -51,6 +51,29 @@ func TestHubDropsSlowClientOnOverflow(t *testing.T) {
 	}
 }
 
+func TestHubCloseDisconnectsClients(t *testing.T) {
+	h := NewHub()
+	ch := h.register()
+	if h.ClientCount() != 1 {
+		t.Fatalf("client count = %d, want 1", h.ClientCount())
+	}
+
+	h.Close()
+	if h.ClientCount() != 0 {
+		t.Errorf("client count after Close = %d, want 0", h.ClientCount())
+	}
+	// The client's channel is closed, so the SSE handler's receive returns and it exits.
+	if _, open := <-ch; open {
+		t.Error("Close did not close the client channel")
+	}
+	// A client registering after Close gets an already-closed channel (exits immediately).
+	if _, open := <-h.register(); open {
+		t.Error("register after Close should return a closed channel")
+	}
+	// Idempotent.
+	h.Close()
+}
+
 func TestServeEventsStreamsFramesAndHeartbeat(t *testing.T) {
 	h := NewHub()
 	h.heartbeat = 40 * time.Millisecond // white-box: short heartbeat for the test

@@ -31,101 +31,118 @@ interface SocketProviderProps {
   children: ReactNode
 }
 
+// reconnectDelayMs is how long we wait before recreating a permanently-closed EventSource.
+const reconnectDelayMs = 1000
+
 export function SocketProvider({ children }: SocketProviderProps) {
   const [isConnected, setIsConnected] = useState(false)
   const queryClient = useQueryClient()
 
   useEffect(() => {
     // AIDEV-NOTE: Guard against StrictMode's double-invoke / unmount races — never touch
-    // state after cleanup.
+    // state or reconnect after cleanup.
     let isCleanedUp = false
 
-    // AIDEV-NOTE: Distinguish the initial open from a reconnect. EventSource reconnects on
-    // its own after a drop and fires `open` again each time. The initial open needs no
+    // AIDEV-NOTE: Distinguish the initial open from a reconnect. The initial open needs no
     // resync — the page's mount queries already fetch — but a RECONNECT must invalidate,
     // because events emitted during the outage were missed and useGroups/useGroupJobs have
-    // no refetchInterval, so the dashboard would stay stale indefinitely. A local closure
-    // flag (not a ref) so a fresh EventSource starts over.
+    // no refetchInterval, so the dashboard would stay stale indefinitely.
     let hasConnected = false
 
-    // AIDEV-NOTE: BACKEND_URL is '' (same-origin) in production/Docker — the unified
-    // statshed-server serves /api/events same-origin. In dev, set VITE_BACKEND_URL or rely
-    // on the Vite /api proxy.
-    const source = new EventSource(`${BACKEND_URL}/api/events`)
+    let source: EventSource | null = null
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined
 
-    source.onopen = () => {
-      if (isCleanedUp) return
-      setIsConnected(true)
-      if (hasConnected) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.health })
-        queryClient.invalidateQueries({ queryKey: queryKeys.groups })
-        queryClient.invalidateQueries({ queryKey: queryKeys.jobs })
-      }
-      hasConnected = true
-    }
-
-    source.onerror = () => {
-      // EventSource auto-reconnects after an error; reflect the outage in the badge
-      // meanwhile (no console noise — a flaky link would spam it).
-      if (!isCleanedUp) setIsConnected(false)
-    }
-
-    // on registers a named-event listener that parses the JSON payload before handling.
     const on = <T,>(event: string, handler: (data: T) => void) => {
-      source.addEventListener(event, (e: MessageEvent) => {
+      source?.addEventListener(event, (e: MessageEvent) => {
         if (isCleanedUp) return
         handler(JSON.parse(e.data) as T)
       })
     }
 
-    on<StatusUpdateEvent>('status_update', (data) => {
-      // Invalidate the specific group's jobs, plus health + the groups list (job counts),
-      // plus the Jobs-page byStatus caches so a status change appears there in realtime.
-      queryClient.invalidateQueries({ queryKey: queryKeys.groupJobs(data.group_name) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.health })
-      queryClient.invalidateQueries({ queryKey: queryKeys.groups })
-      queryClient.invalidateQueries({ queryKey: queryKeys.jobs })
-    })
+    const connect = () => {
+      if (isCleanedUp) return
+      // BACKEND_URL is '' (same-origin) in production/Docker; VITE_BACKEND_URL or the Vite
+      // /api proxy in dev.
+      source = new EventSource(`${BACKEND_URL}/api/events`)
 
-    on('group_created', () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.groups })
-    })
-
-    on('health_update', () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.health })
-      queryClient.invalidateQueries({ queryKey: queryKeys.groups })
-    })
-
-    on<JobsAckedEvent>('jobs_acked', (data) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.health })
-      queryClient.invalidateQueries({ queryKey: queryKeys.groups })
-      queryClient.invalidateQueries({ queryKey: queryKeys.jobs })
-      if (data.group_name) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.groupJobs(data.group_name) })
+      source.onopen = () => {
+        if (isCleanedUp) return
+        setIsConnected(true)
+        if (hasConnected) {
+          queryClient.invalidateQueries({ queryKey: queryKeys.health })
+          queryClient.invalidateQueries({ queryKey: queryKeys.groups })
+          queryClient.invalidateQueries({ queryKey: queryKeys.jobs })
+        }
+        hasConnected = true
       }
-    })
 
-    on<JobDeletedEvent>('job_deleted', (data) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.health })
-      queryClient.invalidateQueries({ queryKey: queryKeys.groups })
-      queryClient.invalidateQueries({ queryKey: queryKeys.jobs })
-      if (data.group_name) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.groupJobs(data.group_name) })
+      source.onerror = () => {
+        if (isCleanedUp) return
+        setIsConnected(false)
+        // AIDEV-NOTE: EventSource auto-reconnects on a network error (readyState stays
+        // CONNECTING), but a NON-200 response — e.g. a reverse proxy or load balancer
+        // returning 502/503/500 during a backend restart or deploy — closes it
+        // PERMANENTLY. Without this the dashboard would be stuck "Disconnected" until a
+        // manual reload. Recreate it ourselves so the app always recovers and resyncs.
+        if (source && source.readyState === EventSource.CLOSED) {
+          source.close()
+          clearTimeout(reconnectTimer)
+          reconnectTimer = setTimeout(connect, reconnectDelayMs)
+        }
       }
-    })
 
-    on<JobExpiredEvent>('job_expired', (data) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.health })
-      queryClient.invalidateQueries({ queryKey: queryKeys.groups })
-      queryClient.invalidateQueries({ queryKey: queryKeys.jobs })
-      if (data.group_name) {
+      on<StatusUpdateEvent>('status_update', (data) => {
+        // Invalidate the specific group's jobs, plus health + the groups list (job counts),
+        // plus the Jobs-page byStatus caches so a status change appears there in realtime.
         queryClient.invalidateQueries({ queryKey: queryKeys.groupJobs(data.group_name) })
-      }
-    })
+        queryClient.invalidateQueries({ queryKey: queryKeys.health })
+        queryClient.invalidateQueries({ queryKey: queryKeys.groups })
+        queryClient.invalidateQueries({ queryKey: queryKeys.jobs })
+      })
+
+      on('group_created', () => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.groups })
+      })
+
+      on('health_update', () => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.health })
+        queryClient.invalidateQueries({ queryKey: queryKeys.groups })
+      })
+
+      on<JobsAckedEvent>('jobs_acked', (data) => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.health })
+        queryClient.invalidateQueries({ queryKey: queryKeys.groups })
+        queryClient.invalidateQueries({ queryKey: queryKeys.jobs })
+        if (data.group_name) {
+          queryClient.invalidateQueries({ queryKey: queryKeys.groupJobs(data.group_name) })
+        }
+      })
+
+      on<JobDeletedEvent>('job_deleted', (data) => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.health })
+        queryClient.invalidateQueries({ queryKey: queryKeys.groups })
+        queryClient.invalidateQueries({ queryKey: queryKeys.jobs })
+        if (data.group_name) {
+          queryClient.invalidateQueries({ queryKey: queryKeys.groupJobs(data.group_name) })
+        }
+      })
+
+      on<JobExpiredEvent>('job_expired', (data) => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.health })
+        queryClient.invalidateQueries({ queryKey: queryKeys.groups })
+        queryClient.invalidateQueries({ queryKey: queryKeys.jobs })
+        if (data.group_name) {
+          queryClient.invalidateQueries({ queryKey: queryKeys.groupJobs(data.group_name) })
+        }
+      })
+    }
+
+    connect()
 
     return () => {
       isCleanedUp = true
-      source.close()
+      clearTimeout(reconnectTimer)
+      source?.close()
     }
   }, [queryClient])
 

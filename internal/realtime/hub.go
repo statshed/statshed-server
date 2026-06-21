@@ -28,6 +28,7 @@ type Event struct {
 type Hub struct {
 	mu      sync.Mutex
 	clients map[chan Event]struct{}
+	closed  bool
 
 	// heartbeat is the ping interval; 0 means defaultHeartbeat. Settable in tests.
 	heartbeat time.Duration
@@ -53,13 +54,35 @@ func (h *Hub) Broadcast(e Event) {
 	}
 }
 
-// register adds a client and returns its event channel.
+// register adds a client and returns its event channel. After the hub is closed it returns
+// an already-closed channel, so a late-arriving client's handler exits immediately.
 func (h *Hub) register() chan Event {
 	ch := make(chan Event, clientBufferDepth)
 	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed {
+		close(ch)
+		return ch
+	}
 	h.clients[ch] = struct{}{}
-	h.mu.Unlock()
 	return ch
+}
+
+// Close disconnects every client (closing their channels so the SSE handlers return) and
+// marks the hub closed. Called on server shutdown so graceful shutdown does not block on the
+// long-lived SSE handlers, and so each connection closes cleanly — letting any proxy
+// propagate the close and the clients reconnect. Idempotent.
+func (h *Hub) Close() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed {
+		return
+	}
+	h.closed = true
+	for ch := range h.clients {
+		delete(h.clients, ch)
+		close(ch)
+	}
 }
 
 // unregister removes a client and closes its channel. Idempotent: a client already dropped

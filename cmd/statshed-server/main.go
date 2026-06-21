@@ -86,6 +86,14 @@ func run(cfg config.Config) int {
 		go background.New(st, hub).Run(ctx)
 	}
 
+	// On shutdown, close the SSE hub first so the long-lived /api/events handlers return
+	// promptly (and their connections close cleanly, letting clients reconnect) instead of
+	// stalling graceful shutdown for the full grace period.
+	go func() {
+		<-ctx.Done()
+		hub.Close()
+	}()
+
 	slog.Info("statshed-server starting", "version", version, "addr", srv.Addr())
 	if err := srv.Run(ctx); err != nil {
 		slog.Error("server error", "err", err)
