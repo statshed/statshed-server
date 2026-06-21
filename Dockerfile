@@ -13,6 +13,8 @@ RUN npm run build
 
 # ---- Stage 2: build the static Go binary (embeds the SPA) ----
 FROM golang:1.26 AS build
+# VERSION is injected into main.version (S7); defaults to "dev" for un-stamped local builds.
+ARG VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -21,7 +23,7 @@ COPY . .
 # bakes into the binary.
 RUN rm -rf internal/staticfs/dist && mkdir -p internal/staticfs/dist
 COPY --from=spa /app/frontend/dist/ internal/staticfs/dist/
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w" -o /statshed-server ./cmd/statshed-server
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /statshed-server ./cmd/statshed-server
 # An empty data dir to seed the volume mount point (distroless has no shell to mkdir at
 # build, so create it here and COPY it --chown'd into the final image).
 RUN mkdir -p /data

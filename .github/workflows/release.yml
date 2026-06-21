@@ -1,7 +1,7 @@
-# Release pipeline. Pushing a semver tag (e.g. v0.1.0) builds a multi-arch Docker
-# image, pushes it to GitHub Container Registry (ghcr.io/statshed/statshed-server),
-# and publishes a GitHub Release with a ready-to-run compose file so users can
-# `docker compose up` without building from source.
+# Release pipeline. Pushing a semver tag (e.g. v0.1.0) builds the multi-arch Go image,
+# pushes it to GitHub Container Registry (ghcr.io/statshed/statshed-server), builds
+# self-contained linux/amd64+arm64 binaries (SPA embedded), and publishes a GitHub
+# Release with a ready-to-run compose file, the binaries, and a SHA256SUMS.
 #
 #   git tag v0.1.0 && git push origin v0.1.0
 
@@ -54,24 +54,76 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  binaries:
+    name: Standalone linux binary (${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      # Node builds the real SPA so `make prepare-static` embeds it (not the placeholder, I9).
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Embed the real SPA
+        run: make prepare-static
+
+      # CGO_ENABLED=0 static binary, stripped + trimmed, version stamped (S7). The embedded
+      # SPA makes each binary a self-contained server.
+      - name: Build binary
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.goarch }} go build -trimpath \
+            -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
+            -o statshed-server-${{ github.ref_name }}-linux-${{ matrix.goarch }} ./cmd/statshed-server
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.goarch }}
+          path: statshed-server-${{ github.ref_name }}-linux-${{ matrix.goarch }}
+          retention-days: 1
+
   release:
     name: Publish GitHub Release
-    needs: image
+    needs: [image, binaries]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # The release ships the image-based compose under the canonical filename so
-      # users can run `docker compose up` against it directly.
-      - name: Stage release assets
+      - name: Download standalone binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: bin
+          merge-multiple: true
+
+      # Ship the image-based compose under the canonical filename, the standalone binaries,
+      # and a SHA256SUMS over them.
+      - name: Stage release assets + checksums
         run: |
           mkdir -p release
           cp docker-compose.release.yml release/docker-compose.yml
           cp .env.example release/.env.example
+          cp bin/statshed-server-* release/
+          (cd release && sha256sum statshed-server-* > SHA256SUMS)
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -80,6 +132,8 @@ jobs:
           files: |
             release/docker-compose.yml
             release/.env.example
+            release/statshed-server-*
+            release/SHA256SUMS
           body: |
             ## StatShed ${{ github.ref_name }}
 
@@ -87,13 +141,23 @@ jobs:
 
             - `ghcr.io/statshed/statshed-server:${{ github.ref_name }}`
 
-            ### Run it
+            ### Run with Docker
 
             Download the attached `docker-compose.yml` and `.env.example`, then:
 
             ```bash
-            cp .env.example .env        # set SECRET_KEY (openssl rand -hex 32)
+            cp .env.example .env
             STATSHED_VERSION=${{ github.ref_name }} docker compose up -d
             ```
 
             Open <http://localhost:7827>.
+
+            ### Or run the standalone binary
+
+            Self-contained `linux/amd64` and `linux/arm64` binaries (the SPA is embedded) are
+            attached, with a `SHA256SUMS`:
+
+            ```bash
+            chmod +x statshed-server-${{ github.ref_name }}-linux-amd64
+            ./statshed-server-${{ github.ref_name }}-linux-amd64   # serves http://localhost:7828
+            ```
