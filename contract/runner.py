@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
-"""Driver for the shared HTTP contract suite (spec.md 8.1/8.2).
+"""Driver for the HTTP contract suite (spec.md 8.1/8.2).
 
-Starts a StatShed server (Python or Go) on a fresh SQLite DB under a config profile,
-waits for it to be healthy, runs the contract suite against it over HTTP, then tears it
-down. One server process per (target, profile) run; pytest's autouse fixture truncates
-the DB between tests.
+Starts the StatShed (Go) server on a fresh SQLite DB under a config profile, waits for it
+to be healthy, runs the contract suite against it over HTTP, then tears it down. One
+server process per profile run; pytest's autouse fixture truncates the DB between tests.
 
 Usage:
-    python runner.py --target python [--profile default] [-- pytest args...]
-    python runner.py --target go     [--profile no_spa]  [-- -k EXPR]
+    python runner.py --target go [--profile default] [-- pytest args...]
 
-The Python target is migrated with Alembic first (the Flask app does NOT create tables
-on import -- entrypoint.sh runs `alembic upgrade head` in production). The Go target
-self-migrates (goose) at boot.
+The Go server self-migrates (goose) at boot. (The Python server target was removed at the
+cutover -- Task 8.3; this harness is itself ported to Go in Task 8.5.)
 """
 
 from __future__ import annotations
@@ -31,7 +28,6 @@ import urllib.request
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-BACKEND = REPO_ROOT / "backend"
 CONTRACT = REPO_ROOT / "contract"
 
 REQUIRED_TABLES = ("groups", "jobs", "config")
@@ -78,29 +74,23 @@ def free_port() -> int:
 
 
 def build_env(
-    target: str, profile: str, host: str, port: int, db_file: Path, tmpdir: Path
+    profile: str, host: str, port: int, db_file: Path, tmpdir: Path
 ) -> dict[str, str]:
     env = dict(os.environ)
     # AIDEV-NOTE: runner.py runs inside the contract uv venv, so os.environ carries that
-    # venv's VIRTUAL_ENV. Drop it before launching the server: the Python target's
-    # `uv run` must resolve the backend project's own venv, and a mismatched VIRTUAL_ENV
-    # makes uv warn and could shadow the wrong interpreter.
+    # venv's VIRTUAL_ENV. Drop it before launching the server so the server process does
+    # not inherit the harness's Python environment.
     env.pop("VIRTUAL_ENV", None)
     env["HOST"] = host
     env["PORT"] = str(port)
-    # Absolute path -> SQLAlchemy's 4-slash form ("sqlite:///" + "/abs/path").
+    # Absolute path -> the 4-slash sqlite URL form ("sqlite:///" + "/abs/path").
     env["DATABASE_URL"] = "sqlite:///" + str(db_file)
     env["STATSHED_TEST_HOOKS"] = "1"
     env.update(PROFILE_ENV[profile])
     if profile == "with_spa":
         env["STATIC_DIR"] = str(write_synthetic_spa(tmpdir / "spa-dist"))
     elif profile == "no_spa":
-        if target == "go":
-            env["STATIC_DISABLED"] = "1"
-        else:
-            # Python registers the SPA only when STATIC_DIR exists; point it at a
-            # non-existent dir so no fallback is registered (bare paths -> JSON 404).
-            env["STATIC_DIR"] = str(tmpdir / "no-such-spa")
+        env["STATIC_DISABLED"] = "1"
     return env
 
 
@@ -137,35 +127,6 @@ def assert_tables(db_file: Path) -> None:
         raise RuntimeError(f"schema is missing tables {missing} (have {sorted(names)})")
 
 
-def start_python(env: dict[str, str], host: str, port: int) -> subprocess.Popen[bytes]:
-    # Migrate first: the Flask app does not create tables on import.
-    # AIDEV-NOTE: Invoke tools as `uv run python -m <mod>` rather than the console script
-    # (`uv run alembic`) -- the latter can fail to spawn if the venv's script shebang is
-    # stale, whereas `python -m` always resolves the installed module.
-    subprocess.run(
-        ["uv", "run", "python", "-m", "alembic", "upgrade", "head"],
-        cwd=str(BACKEND),
-        env=env,
-        check=True,
-    )
-    cmd = [
-        "uv",
-        "run",
-        "python",
-        "-m",
-        "gunicorn",
-        "-w",
-        "1",
-        "-k",
-        "geventwebsocket.gunicorn.workers.GeventWebSocketWorker",
-        "--bind",
-        f"{host}:{port}",
-        "app:app",
-    ]
-    # start_new_session so the whole gunicorn process group can be torn down cleanly.
-    return subprocess.Popen(cmd, cwd=str(BACKEND), env=env, start_new_session=True)
-
-
 def start_go(env: dict[str, str], workdir: Path) -> subprocess.Popen[bytes]:
     binary = workdir / "statshed-server"
     subprocess.run(
@@ -200,7 +161,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run the StatShed HTTP contract suite."
     )
-    parser.add_argument("--target", required=True, choices=["python", "go"])
+    # The Python target was removed at the cutover (Task 8.3); only the Go server remains.
+    parser.add_argument("--target", default="go", choices=["go"])
     parser.add_argument("--profile", default="default", choices=list(PROFILE_ENV))
     parser.add_argument(
         "pytest_args",
@@ -216,12 +178,8 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="statshed-contract-") as tmp:
         tmpdir = Path(tmp)
         db_file = tmpdir / "statshed.db"
-        env = build_env(args.target, args.profile, host, port, db_file, tmpdir)
-
-        if args.target == "python":
-            proc = start_python(env, host, port)
-        else:
-            proc = start_go(env, tmpdir)
+        env = build_env(args.profile, host, port, db_file, tmpdir)
+        proc = start_go(env, tmpdir)
 
         rc = 1
         try:

@@ -1,8 +1,7 @@
 # CI gate for the StatShed monorepo. Runs on every PR and on pushes to the main
-# branches, failing the run on any non-zero step. Jobs: backend (legacy Python),
-# go, frontend, the hermetic Playwright e2e, the contract suite vs BOTH servers
-# across all profiles (the parity gate), the non-mocked live-SSE gate, and a Go
-# image smoke test.
+# branches, failing the run on any non-zero step. Jobs: go, frontend, the hermetic
+# Playwright e2e, the contract suite vs the Go server across all profiles (the
+# regression gate), the non-mocked live-SSE gate, and a Go image smoke test.
 
 name: CI
 
@@ -21,38 +20,6 @@ permissions:
   contents: read
 
 jobs:
-  backend:
-    name: Backend — ruff, mypy, pytest
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # Installs uv and provisions the Python version pinned in backend/.python-version.
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: backend/uv.lock
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Format check (ruff)
-        run: uv run ruff format --check .
-
-      - name: Lint (ruff)
-        run: uv run ruff check .
-
-      - name: Type-check (mypy)
-        run: uv run mypy app.py models.py config.py background.py
-
-      - name: Tests (pytest)
-        run: uv run pytest
-
   go:
     name: Go — build, vet, lint, test (race)
     runs-on: ubuntu-latest
@@ -161,13 +128,13 @@ jobs:
           retention-days: 7
 
   contract:
-    name: Contract suite (Python + Go, all profiles)
+    name: Contract suite (Go, all profiles)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # The runner builds the Go binary itself; the Python target boots gunicorn + alembic.
+      # The runner builds the Go binary itself; the harness (pytest over HTTP) drives it.
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -178,19 +145,12 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Sync Python deps (backend server + contract harness)
-        run: |
-          (cd backend && uv sync)
-          (cd contract && uv sync)
+      - name: Sync contract harness deps
+        run: (cd contract && uv sync)
 
-      # The same HTTP assertions run against BOTH servers across every profile; any
-      # divergence fails the run (the parity gate — spec §8.1 / impl-guide Task 6.1).
-      - name: Contract suite vs Python (all profiles)
-        run: |
-          for p in default max_page_size max_log_lines log_disabled no_spa with_spa; do
-            echo "::group::python / $p"; make contract-test TARGET=python PROFILE=$p; echo "::endgroup::"
-          done
-
+      # The HTTP contract suite runs against the Go server across every profile; any
+      # regression fails the run (impl-guide Task 6.1). The frozen green-vs-Python parity
+      # baseline is the `contract-baseline` tag; this harness is ported to Go in Task 8.5.
       - name: Contract suite vs Go (all profiles)
         run: |
           for p in default max_page_size max_log_lines log_disabled no_spa with_spa; do

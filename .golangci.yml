@@ -9,12 +9,11 @@ linters:
   # add opinionated linters only with a concrete reason.
   default: standard
   exclusions:
-    # First-party Go lives only under cmd/ and internal/. The frontend/ and backend/
-    # trees carry no Go we own — but `go ./...` still descends into a vendored Go file
-    # under frontend/node_modules. Keep the linter off both trees.
+    # First-party Go lives only under cmd/ and internal/. The frontend/ tree carries no Go
+    # we own — but `go ./...` still descends into a vendored Go file under
+    # frontend/node_modules. Keep the linter off it.
     paths:
       - frontend/
-      - backend/
 
 formatters:
   enable:
