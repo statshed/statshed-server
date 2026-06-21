@@ -131,6 +131,21 @@ describe('SocketContext reconnect resync', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.groups })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.jobs })
   })
+
+  it('resyncs on the FIRST open if it followed errors (app mounted during an outage)', () => {
+    const { invalidateSpy } = renderProvider()
+    invalidateSpy.mockClear()
+
+    // The stream errored before it ever opened — the backend/proxy was down at mount, so the
+    // mount queries may have failed and exhausted their retries. When it finally opens, the
+    // dashboard must resync even though this is technically the first successful open.
+    act(() => mock.onerror?.())
+    act(() => mock.onopen?.())
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.health })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.groups })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.jobs })
+  })
 })
 
 describe('SocketContext connection badge', () => {

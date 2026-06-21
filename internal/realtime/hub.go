@@ -29,6 +29,10 @@ type Hub struct {
 	mu      sync.Mutex
 	clients map[chan Event]struct{}
 	closed  bool
+	// done is closed by Close() to signal every ServeEvents handler to return at once on
+	// shutdown — with priority over the events still buffered on its channel, so the handler
+	// never writes those (a write could block a slow client and stall graceful shutdown).
+	done chan struct{}
 
 	// heartbeat is the ping interval; 0 means defaultHeartbeat. Settable in tests.
 	heartbeat time.Duration
@@ -36,7 +40,7 @@ type Hub struct {
 
 // NewHub builds an empty hub.
 func NewHub() *Hub {
-	return &Hub{clients: make(map[chan Event]struct{})}
+	return &Hub{clients: make(map[chan Event]struct{}), done: make(chan struct{})}
 }
 
 // Broadcast delivers e to every connected client. A client whose buffer is full is dropped
@@ -68,10 +72,13 @@ func (h *Hub) register() chan Event {
 	return ch
 }
 
-// Close disconnects every client (closing their channels so the SSE handlers return) and
-// marks the hub closed. Called on server shutdown so graceful shutdown does not block on the
-// long-lived SSE handlers, and so each connection closes cleanly — letting any proxy
-// propagate the close and the clients reconnect. Idempotent.
+// Close disconnects every client and marks the hub closed. It closes the shared done
+// channel — which every ServeEvents handler selects on with priority — so the handlers
+// return at once on shutdown WITHOUT first writing any events still buffered on their
+// channel (those writes could block a slow/proxy-buffered client and stall graceful
+// shutdown, the very thing this path exists to prevent — codex review). Closing each client
+// channel too covers a handler sitting between loop iterations, and lets any proxy propagate
+// the close so clients reconnect. Idempotent.
 func (h *Hub) Close() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -79,6 +86,7 @@ func (h *Hub) Close() {
 		return
 	}
 	h.closed = true
+	close(h.done)
 	for ch := range h.clients {
 		delete(h.clients, ch)
 		close(ch)

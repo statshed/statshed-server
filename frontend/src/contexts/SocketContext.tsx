@@ -48,6 +48,12 @@ export function SocketProvider({ children }: SocketProviderProps) {
     // because events emitted during the outage were missed and useGroups/useGroupJobs have
     // no refetchInterval, so the dashboard would stay stale indefinitely.
     let hasConnected = false
+    // AIDEV-NOTE: hadError tracks whether the stream errored before its FIRST successful
+    // open. If the app mounted during a backend/proxy outage, the mount queries may have
+    // already failed and exhausted their retries; so once the stream finally opens we must
+    // resync even though this is technically the first open, or the dashboard stays
+    // stale/errored even though it is now live (codex review).
+    let hadError = false
 
     let source: EventSource | null = null
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined
@@ -68,17 +74,23 @@ export function SocketProvider({ children }: SocketProviderProps) {
       source.onopen = () => {
         if (isCleanedUp) return
         setIsConnected(true)
-        if (hasConnected) {
+        // Resync on every (re)open EXCEPT the very first clean connect (mount queries already
+        // fetch). A reconnect — OR a first open that only succeeded after earlier errors (the
+        // app loaded during an outage; see hadError) — must invalidate, or the dashboard
+        // stays stale.
+        if (hasConnected || hadError) {
           queryClient.invalidateQueries({ queryKey: queryKeys.health })
           queryClient.invalidateQueries({ queryKey: queryKeys.groups })
           queryClient.invalidateQueries({ queryKey: queryKeys.jobs })
         }
         hasConnected = true
+        hadError = false
       }
 
       source.onerror = () => {
         if (isCleanedUp) return
         setIsConnected(false)
+        hadError = true // the next successful (re)open must resync; see hadError above
         // AIDEV-NOTE: EventSource auto-reconnects on a network error (readyState stays
         // CONNECTING), but a NON-200 response — e.g. a reverse proxy or load balancer
         // returning 502/503/500 during a backend restart or deploy — closes it

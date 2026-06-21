@@ -118,6 +118,44 @@ func TestServeEventsStreamsFramesAndHeartbeat(t *testing.T) {
 	}
 }
 
+func TestServeEventsReturnsOnHubClose(t *testing.T) {
+	h := NewHub()
+	srv := httptest.NewServer(http.HandlerFunc(h.ServeEvents))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if !eventually(func() bool { return h.ClientCount() == 1 }) {
+		t.Fatal("client did not register")
+	}
+
+	// Queue events the client has not yet read, then close the hub. Close must end the
+	// handler so the stream reaches EOF promptly — graceful shutdown does not hang on the
+	// long-lived SSE handler.
+	for i := 0; i < 10; i++ {
+		h.Broadcast(Event{Name: "x", Data: []byte("y")})
+	}
+	h.Close()
+
+	ended := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		close(ended)
+	}()
+	select {
+	case <-ended:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ServeEvents did not return after hub Close")
+	}
+}
+
 // scanFrames splits an SSE stream into frames (blocks separated by a blank line).
 func scanFrames(r io.Reader, out chan<- string) {
 	sc := bufio.NewScanner(r)
