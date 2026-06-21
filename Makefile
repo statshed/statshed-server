@@ -6,7 +6,7 @@ COMPOSE ?= docker compose
 .DEFAULT_GOAL := help
 .RECIPEPREFIX := >
 
-.PHONY: help up down logs build dev-backend dev-frontend test test-backend test-frontend e2e contract-test prepare-static live-e2e
+.PHONY: help up down logs build dev dev-backend dev-frontend test test-backend test-frontend e2e contract-test prepare-static live-e2e lint
 
 help: ## Show available targets
 > @grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -17,10 +17,10 @@ up: ## Build (if needed) and start the full stack in the background
 down: ## Stop the stack (the statshed-data volume is preserved)
 > $(COMPOSE) down
 
-logs: ## Follow logs from both services
+logs: ## Follow the statshed-server logs
 > $(COMPOSE) logs -f
 
-build: ## Build both Docker images without starting them
+build: ## Build the statshed-server image without starting it
 > $(COMPOSE) build
 
 dev-backend: ## Run the backend dev server locally (no Docker; needs uv)
@@ -29,9 +29,16 @@ dev-backend: ## Run the backend dev server locally (no Docker; needs uv)
 dev-frontend: ## Run the frontend dev server locally (no Docker; needs Node 20+)
 > cd frontend && npm ci && npm run dev
 
-test: test-backend test-frontend ## Run backend + frontend unit tests
+dev: prepare-static ## Run the Go server locally with the freshly-built embedded SPA (Go + Node)
+> go run ./cmd/statshed-server
 
-test-backend: ## Run backend tests (pytest)
+test: ## Run the Go server unit tests with the race detector (C3)
+> go test -race ./...
+
+lint: ## Lint the Go code (golangci-lint)
+> golangci-lint run ./...
+
+test-backend: ## Run backend tests (pytest) — legacy Python server, kept until cutover
 > cd backend && uv run pytest
 
 test-frontend: ## Run frontend unit tests (vitest)

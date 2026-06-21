@@ -1,10 +1,10 @@
-# StatShed — full stack from source, as a single image.
+# StatShed — full stack from source, as a single Go image.
 #
-#   cp .env.example .env        # then set SECRET_KEY
+#   cp .env.example .env        # then customize as needed
 #   docker compose up --build -d
 #   open http://localhost:7827
 #
-# One container serves the React SPA, the REST API, and the Socket.IO WebSocket.
+# One container serves the React SPA, the REST API, and the SSE stream (/api/events).
 # CLI clients POST job status to the same origin under /api (e.g. /api/status).
 
 services:
@@ -22,8 +22,9 @@ services:
       - statshed-data:/data
     restart: unless-stopped
     healthcheck:
-      # 127.0.0.1 (not localhost): the server listens on IPv4 only.
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:7828/api/health"]
+      # The distroless image has no curl/shell — the binary probes /api/health itself
+      # (on the loopback, 127.0.0.1, matching its IPv4 bind).
+      test: ["CMD", "/statshed-server", "--healthcheck"]
       interval: 30s
       timeout: 10s
       retries: 3
