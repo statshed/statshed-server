@@ -6,7 +6,7 @@ COMPOSE ?= docker compose
 .DEFAULT_GOAL := help
 .RECIPEPREFIX := >
 
-.PHONY: help up down logs build dev-backend dev-frontend test test-backend test-frontend e2e contract-test prepare-static
+.PHONY: help up down logs build dev-backend dev-frontend test test-backend test-frontend e2e contract-test prepare-static live-e2e
 
 help: ## Show available targets
 > @grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -57,3 +57,13 @@ prepare-static: ## Build the SPA into internal/staticfs/dist (embedded by the Go
 > rm -rf internal/staticfs/dist
 > mkdir -p internal/staticfs/dist
 > cp -R frontend/dist/. internal/staticfs/dist/
+
+# AIDEV-NOTE: Executable live SSE gate (Task 5.5). Builds the real Go server and runs the
+# non-mocked e2e-live spec, which loads the app through the Vite dev proxy (:7827 -> the Go
+# server at :7828) and verifies unbuffered live delivery + reconnect-driven refetch. The
+# spec spawns/restarts Go itself (GO_BIN). PLAYWRIGHT_CHROMIUM_BIN points at a working
+# Chrome on hosts where the bundled chromium can't link the system libs (e.g. NixOS); in CI
+# the bundled chromium is used.
+live-e2e: ## Run the live SSE proxy/reconnect-resync gate (Task 5.5) — needs Go + a browser
+> CGO_ENABLED=0 go build -o statshed-server ./cmd/statshed-server
+> cd frontend && GO_BIN=$(CURDIR)/statshed-server PLAYWRIGHT_CHROMIUM_BIN=$${PLAYWRIGHT_CHROMIUM_BIN:-$$(command -v google-chrome 2>/dev/null)} npx playwright test --config=playwright.live.config.ts
