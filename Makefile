@@ -41,14 +41,13 @@ test-frontend: ## Run frontend unit tests (vitest)
 e2e: ## Run frontend end-to-end tests (Playwright)
 > cd frontend && npm run test:e2e
 
-# AIDEV-NOTE: The shared HTTP contract suite (spec.md 8). runner.py boots a server
-# (Python or Go) on a fresh DB under a config profile, runs the suite over HTTP, then
-# tears it down. The same assertions run against both servers. The early gates
-# (impl-guide Task 1.5 / Phase 3 / Task 6.1) invoke this; Task 7.2 adapts it for the Go
-# Makefile. Everything after `--` is passed to pytest.
-contract-test: ## Run the contract suite (TARGET=python|go [PROFILE=<name>] [K=<expr>])
-> @test -n "$(TARGET)" || { echo "Usage: make contract-test TARGET=python|go [PROFILE=<name>] [K=<expr>]"; exit 2; }
-> cd contract && uv run python runner.py --target $(TARGET) $(if $(PROFILE),--profile $(PROFILE)) -- $(if $(K),-k "$(K)")
+# AIDEV-NOTE: The Go black-box HTTP contract / regression suite (contracttest/, build tag
+# `contract`). TestMain boots the real cmd/statshed-server binary on a fresh DB under the
+# CONTRACT_PROFILE config profile and drives it over HTTP (Task 8.5; the audited mapping from
+# the now-removed Python harness is contracttest/coverage-map.md). The build tag keeps it out
+# of the fast `go test ./...` run, so invoke it explicitly here. K is an optional -run regex.
+contract-test: ## Run the Go HTTP contract suite (PROFILE=<name>, default 'default'; K=<run-regex>)
+> CONTRACT_PROFILE=$(if $(PROFILE),$(PROFILE),default) go test -tags contract -count=1 ./contracttest $(if $(K),-run "$(K)")
 
 # AIDEV-NOTE: Build the real React SPA into internal/staticfs/dist so the Go binary embeds
 # it (I9). Overwrites the committed placeholder (a local-only change; not committed). The

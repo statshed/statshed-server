@@ -3,20 +3,6 @@
 .env.local
 .env.*.local
 
-# Python (backend)
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.venv/
-venv/
-ENV/
-.ruff_cache/
-.mypy_cache/
-.pytest_cache/
-.coverage
-htmlcov/
-
 # SQLite
 *.db
 *.db-shm

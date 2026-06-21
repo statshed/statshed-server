@@ -1,5 +1,14 @@
 # Contract coverage map
 
+> **Status (Task 8.5):** the contract suite is now the **Go** black-box HTTP suite in this
+> directory (`contracttest/*_test.go`, build tag `contract`); the Python `backend/` server and
+> the Python `contract/` pytest harness have been removed. This document is preserved as the
+> **audit trail**: paths like `backend/tests/...` and `contract/test_*.py` below reference the
+> now-removed Python sources for provenance. Each Python source file maps 1:1 to a Go file of
+> the same area (e.g. `contract/test_health.py` → `contracttest/health_test.go`); the suite
+> runs green against the Go server across all six profiles (174 = default 161, max_page_size 2,
+> max_log_lines 3, log_disabled 1, no_spa 3, with_spa 4), matching the frozen `contract-baseline`.
+
 Accounts for **every** test in `backend/tests/` (≈192 methods) so the port from the
 Python suite to the shared HTTP contract suite is auditable — a green gate cannot hide a
 silently-dropped test. Each backend test maps to one of:

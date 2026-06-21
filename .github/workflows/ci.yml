@@ -134,27 +134,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # The runner builds the Go binary itself; the harness (pytest over HTTP) drives it.
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.26'
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Sync contract harness deps
-        run: (cd contract && uv sync)
-
-      # The HTTP contract suite runs against the Go server across every profile; any
-      # regression fails the run (impl-guide Task 6.1). The frozen green-vs-Python parity
-      # baseline is the `contract-baseline` tag; this harness is ported to Go in Task 8.5.
-      - name: Contract suite vs Go (all profiles)
+      # The Go contract suite (contracttest/, build tag `contract`) boots the real binary and
+      # drives it over HTTP across every profile; any regression fails the run (impl-guide
+      # Task 6.1). The frozen green-vs-Python parity baseline is the `contract-baseline` tag.
+      - name: Contract suite (all profiles)
         run: |
           for p in default max_page_size max_log_lines log_disabled no_spa with_spa; do
-            echo "::group::go / $p"; make contract-test TARGET=go PROFILE=$p; echo "::endgroup::"
+            echo "::group::$p"; make contract-test PROFILE=$p; echo "::endgroup::"
           done
 
   live-e2e:
