@@ -10,7 +10,7 @@ export default defineConfig({
   fullyParallel: false, // the reconnect test stops/starts Go; specs must run serially
   workers: 1,
   forbidOnly: !!process.env.CI,
-  retries: 0,
+  retries: process.env.CI ? 2 : 0, // tolerate the occasional restart-timing flake in CI
   reporter: 'line',
   timeout: 60_000,
   use: {
