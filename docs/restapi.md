@@ -1,296 +1,259 @@
 # StatShed REST API Reference
 
-StatShed is a status dashboard application for tracking job statuses across groups. This document describes the REST API provided by the StatShed server.
+StatShed is a status dashboard for tracking job statuses across groups. This document
+describes the HTTP API served by the StatShed server. For a friendly introduction and the
+quick start, see the [README](../README.md).
 
 ## Base URL
 
-By default, the server runs at `http://127.0.0.1:7828`. Configure via `HOST` and `PORT`
-environment variables. All endpoints below are served under the `/api` prefix — for example
-the health endpoint is `GET /api/health`. (In the bundled Docker deployment the browser and
-CLI clients reach the app on host port `7827`.)
+All API endpoints are served under the **`/api`** prefix on the server's single port.
 
-## Content Type
+- The standalone binary listens on **`http://127.0.0.1:7828`** by default (configurable via
+  the `HOST` and `PORT` environment variables).
+- The Docker setup maps host port **`7827`** to the container's `7828`, so requests go to
+  **`http://localhost:7827/api/...`**.
 
-- **Requests:** `application/json`
-- **Responses:** `application/json`
+The examples below use `http://localhost:7827`.
+
+## Content type
+
+- **Requests:** `application/json` (or `multipart/form-data` for status reports that include
+  a log file).
+- **Responses:** `application/json` — except `GET /api/events`, which is a
+  `text/event-stream` (see [Real-Time Events](#real-time-events-sse)).
 
 ## Authentication
 
-No authentication is currently required for API endpoints.
+None. Every request is trusted — run StatShed on a trusted network or behind an
+authenticating reverse proxy. See [Security](../README.md#security).
+
+## Names & validation
+
+`group` and `job` names are **normalized to lowercase**, trimmed, and must match
+`^[a-z0-9._-]+$` (letters, digits, dot, dash, underscore), up to 255 characters. A name with
+other characters (e.g. spaces) is rejected with `400`.
+
+## Error format
+
+Every error returns a JSON envelope:
+
+```json
+{ "error": "validation_error", "message": "status is required", "field": "status" }
+```
+
+- `error` — a stable slug: `validation_error`, `bad_request`, `not_found`, `invalid_state`,
+  `method_not_allowed`, `payload_too_large`, `unsupported_media_type`,
+  `internal_server_error`, or `http_error`.
+- `message` — a human-readable description.
+- `field` — present when the error concerns a specific request field. Cross-field validation
+  errors use a `fields` object instead.
+
+Status codes used: `200`, `201`, `400`, `404`, `405`, `413`, `415`, `500`.
 
 ---
 
 ## Endpoints
 
-### Health
+### GET /api/health
 
-#### GET /api/health
-
-Returns an overall health summary across all groups.
-
-**Response:**
+Overall health summary across all jobs.
 
 ```json
 {
-  "status": "healthy",
+  "status": "unhealthy",
   "total_jobs": 10,
   "healthy": 8,
   "unhealthy": 1,
+  "acked": 0,
   "in_progress": 1,
-  "by_status": {
-    "success": 8,
-    "error": 1,
-    "progress": 1,
-    "timeout": 0,
-    "stale": 0
-  }
+  "by_status": { "success": 8, "error": 1, "progress": 1, "timeout": 0, "stale": 0 }
 }
 ```
 
-**Status Values:**
-- `healthy` - All jobs are successful
-- `unhealthy` - Any jobs have error, timeout, or stale status
-- `in_progress` - Jobs are running (no errors)
-- `empty` - No jobs exist
+- `status` — overall state, by precedence: `empty` (no jobs) > `unhealthy` > `in_progress` >
+  `healthy`.
+- `unhealthy` excludes acknowledged jobs; `by_status` holds raw counts (including acked).
 
 ---
 
-### Status Submission
-
-#### POST /api/status
+### POST /api/status
 
 Submit or update a job status. Creates the group and job if they don't exist.
 
-**Request Body:**
+**Body (JSON):**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `group` | string | Yes | Group name (max 255 chars) |
-| `job` | string | Yes | Job name (max 255 chars) |
-| `status` | string | Yes | One of: `success`, `error`, `progress`, `timeout`, `stale` |
-| `message` | string | No | Optional message (max 4096 chars) |
-| `log` | file | No | Optional log file (multipart/form-data only, see below) |
-
-**Example Request (JSON):**
+| `group` | string | yes | Group name (normalized; ≤255 chars) |
+| `job` | string | yes | Job name (normalized; ≤255 chars) |
+| `status` | string | yes | One of `success`, `error`, `progress`, `timeout`, `stale`. Clients normally send `success`/`error`/`progress`; `timeout` and `stale` are usually assigned by the server. |
+| `message` | string | no | Optional message (≤4096 chars) |
 
 ```json
-{
-  "group": "nightly-builds",
-  "job": "backend-tests",
-  "status": "success",
-  "message": "All 42 tests passed"
-}
+{ "group": "ci", "job": "backend-tests", "status": "success", "message": "All 42 passed" }
 ```
 
-**Example Request (multipart/form-data with log file):**
+**With a log file** use `multipart/form-data` (fields as form parts, the log as a file part
+named `log`):
 
 ```bash
-curl -X POST http://127.0.0.1:7828/api/status \
-  -F "group=nightly-builds" \
-  -F "job=backend-tests" \
-  -F "status=error" \
-  -F "message=Build failed" \
-  -F "log=@build.log"
+curl -X POST http://localhost:7827/api/status \
+  -F group=ci -F job=backend-tests -F status=error -F message="Build failed" \
+  -F log=@build.log
 ```
 
-**Log File Notes:**
-- Log files require `multipart/form-data` content type (not JSON)
-- Logs are truncated to `MAX_LOG_LINES` (default 1000) if they exceed the limit
-- Log uploads can be disabled via `LOG_UPLOAD_ENABLED=false`
-- Submitting a new status update with a log replaces the previous log
+- Logs require `multipart/form-data` (not JSON).
+- A log longer than `MAX_LOG_LINES` (default 1000) is truncated to the last N lines.
+- Log uploads can be disabled with `LOG_UPLOAD_ENABLED=false`; a log sent while disabled is
+  ignored and the response includes a `warning`.
+- Each new report with a log replaces the previous log.
 
-**Response (201 Created):**
+**Response (`201 Created`):**
 
 ```json
-{
-  "success": true,
-  "job": {
-    "id": 1,
-    "group_id": 1,
-    "group_name": "nightly-builds",
-    "name": "backend-tests",
-    "status": "success",
-    "message": "All 42 tests passed",
-    "updated_at": "2025-01-17T12:00:00Z",
-    "created_at": "2025-01-17T10:00:00Z"
-  }
-}
+{ "success": true, "job": { /* job object, see below */ } }
 ```
 
-**Errors:**
-- `400 Bad Request` - Missing required fields, invalid status, or length exceeded
-- `500 Internal Server Error` - Database error
+**Errors:** `400` (missing/invalid field, length exceeded), `413` (body over 1 MB), `500`.
 
 ---
 
-### Jobs
+### GET /api/jobs
 
-#### GET /api/jobs
+List jobs across all groups, newest first (`updated_at` descending).
 
-List jobs across all groups, optionally filtered by status. Used by the dashboard
-health-card click-through to show jobs in a given state.
-
-**Query Parameters:**
+**Query parameters:**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `status` | string | (all) | Comma-separated statuses to filter by, e.g. `error,timeout`. Invalid values return `400`. |
-| `limit` | integer | (none) | Maximum number of jobs to return. Must be a positive integer; clamped to a server maximum (500). Omit to return all matching jobs. |
-| `offset` | integer | 0 | Number of jobs to skip, for paging. Must be non-negative. |
+| `status` | string | (all) | Comma-separated statuses to filter by, e.g. `error,timeout`. Invalid values → `400`. |
+| `limit` | integer | (none) | Max jobs to return; must be positive, clamped to the server max (`MAX_JOBS_PAGE_SIZE`, default 500). Omit to return all. |
+| `offset` | integer | 0 | Jobs to skip, for paging; must be non-negative. |
 
-Pagination is opt-in: with no `limit`/`offset` the full matching result set is
-returned. When supplied, only that window is returned, but `total` is always the
-full matching count. Jobs are ordered by `updated_at` descending (most recent first).
-
-**Response:**
+Pagination is opt-in: with no `limit`/`offset` the full result set is returned. `total` is
+always the full matching count, independent of the page window.
 
 ```json
-{
-  "jobs": [
-    {
-      "id": 1,
-      "group_id": 1,
-      "group_name": "nightly-builds",
-      "name": "backend-tests",
-      "status": "success",
-      "message": "All 42 tests passed",
-      "acked": false,
-      "has_log": true,
-      "updated_at": "2025-01-17T12:00:00Z",
-      "created_at": "2025-01-17T10:00:00Z"
-    }
-  ],
-  "total": 1
-}
+{ "jobs": [ { /* job object */ } ], "total": 1 }
 ```
 
-- `total` is the number of jobs matching the `status` filter, independent of `limit`/`offset`.
-
-**Errors:**
-- `400 Bad Request` - Invalid `status`, `limit`, or `offset` value
+**Errors:** `400` (invalid `status`, `limit`, or `offset`).
 
 ---
 
-### Groups
+### POST /api/jobs/{id}/ack
 
-#### GET /api/groups
+Acknowledge a single unhealthy job, clearing it from the unhealthy count. Only `error`,
+`timeout`, and `stale` jobs can be acknowledged.
+
+**Response (`200`):** `{ "job": { /* job object, now acked */ } }`
+
+**Errors:** `400` (`invalid_state` — job is not in an acknowledgeable status), `404`.
+
+---
+
+### DELETE /api/jobs/{id}
+
+Delete a job.
+
+```json
+{ "deleted_job": { /* job object */ }, "group_id": 1, "group_name": "ci" }
+```
+
+**Errors:** `404`.
+
+---
+
+### POST /api/groups/{name}/ack
+
+Acknowledge all unhealthy jobs in a group.
+
+**Response (`200`):** `{ "acked_count": 3, "group": "ci" }`
+
+**Errors:** `404` (group does not exist).
+
+---
+
+### POST /api/ack-all
+
+Acknowledge every unhealthy job across all groups.
+
+**Response (`200`):** `{ "acked_count": 7 }`
+
+---
+
+### GET /api/groups
 
 List all groups with health summary information.
-
-**Response:**
 
 ```json
 {
   "groups": [
     {
       "id": 1,
-      "name": "nightly-builds",
+      "name": "ci",
       "progress_timeout_minutes": null,
       "staleness_timeout_hours": null,
-      "created_at": "2025-01-17T10:00:00Z",
+      "staleness_enabled": false,
+      "expiration_timeout_hours": null,
+      "created_at": "2026-01-17T10:00:00Z",
       "job_count": 5,
       "health": "healthy",
-      "status_counts": {
-        "success": 5,
-        "error": 0,
-        "progress": 0,
-        "timeout": 0,
-        "stale": 0
-      }
+      "unhealthy_count": 0,
+      "acked_count": 0,
+      "status_counts": { "success": 5, "error": 0, "progress": 0, "timeout": 0, "stale": 0 }
     }
   ]
 }
 ```
 
+Per-group timeout fields are `null` when the group uses the global defaults.
+
 ---
 
-#### GET /api/groups/{name}/jobs
+### GET /api/groups/{name}/jobs
 
-Get jobs within a specific group, optionally paginated.
-
-**Path Parameters:**
-- `name` - Group name
-
-**Query Parameters:**
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `limit` | integer | (none) | Maximum number of jobs to return. Must be a positive integer; clamped to a server maximum (500). Omit to return all jobs. |
-| `offset` | integer | 0 | Number of jobs to skip, for paging. Must be non-negative. |
-
-Pagination is opt-in (same convention as `GET /jobs`): with no `limit`/`offset` the
-full result set is returned. When supplied, only that window is returned, but `total`
-is always the full job count for the group. Jobs are ordered by `updated_at`
-descending (most recent first).
-
-**Response:**
+Jobs within a group, newest first. Supports the same opt-in `limit`/`offset` pagination as
+`GET /api/jobs`; `total` is the full job count for the group.
 
 ```json
 {
-  "group": {
-    "id": 1,
-    "name": "nightly-builds",
-    "progress_timeout_minutes": null,
-    "staleness_timeout_hours": null,
-    "created_at": "2025-01-17T10:00:00Z"
-  },
-  "jobs": [
-    {
-      "id": 1,
-      "group_id": 1,
-      "group_name": "nightly-builds",
-      "name": "backend-tests",
-      "status": "success",
-      "message": "All 42 tests passed",
-      "updated_at": "2025-01-17T12:00:00Z",
-      "created_at": "2025-01-17T10:00:00Z"
-    }
-  ],
+  "group": { "id": 1, "name": "ci", "progress_timeout_minutes": null, "staleness_timeout_hours": null, "staleness_enabled": false, "expiration_timeout_hours": null, "created_at": "2026-01-17T10:00:00Z" },
+  "jobs": [ { /* job object */ } ],
   "total": 1
 }
 ```
 
-- `total` is the full number of jobs in the group, independent of `limit`/`offset`.
-
-**Errors:**
-- `400 Bad Request` - Invalid `limit` or `offset` value
-- `404 Not Found` - Group does not exist
+**Errors:** `400` (invalid `limit`/`offset`), `404` (group does not exist).
 
 ---
 
-#### GET /api/groups/{name}/jobs/{job_name}/log
+### GET /api/groups/{name}/jobs/{job}/log
 
-Retrieve log content for a specific job.
+Retrieve a job's stored log.
 
-**Path Parameters:**
-- `name` - Group name
-- `job_name` - Job name
-
-**Query Parameters:**
+**Query parameters:**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `tail` | integer | 100 | Number of lines to return from the end of the log |
-| `all` | boolean | false | If true, return the full log (ignores `tail`) |
-
-**Response:**
+| `tail` | integer | 1000 | Number of lines to return from the end of the log. A missing, non-integer, or non-positive value falls back to 1000. |
+| `all` | boolean | false | Return the full stored log (ignores `tail`). |
 
 ```json
 {
-  "job": "backend-tests",
-  "group": "nightly-builds",
-  "log": "Running tests...\nTest 1 passed\nTest 2 failed\n",
-  "line_count": 3,
+  "log": "Running tests...\nTest 1 passed\n",
+  "line_count": 2,
   "truncated": false,
-  "updated_at": "2025-01-17T12:00:00Z"
+  "total_line_count": 2
 }
 ```
 
-- `truncated` indicates whether the stored log was truncated during upload
-- `line_count` is the total number of lines in the stored log
+- `line_count` — number of lines in the returned `log`.
+- `total_line_count` — total lines stored for the job.
+- `truncated` — `true` when this response is a tail (the stored log has more lines than were
+  returned), i.e. `total_line_count > line_count`.
 
-**Errors:**
-- `404 Not Found` - Job does not exist or no log available
+**Errors:** `404` (job does not exist or has no log).
 
 ---
 
@@ -298,146 +261,160 @@ Retrieve log content for a specific job.
 
 #### GET /api/config
 
-Retrieve global configuration settings.
-
-**Response:**
+Global timeout/staleness/expiration settings.
 
 ```json
-{
-  "progress_timeout_minutes": 5,
-  "staleness_timeout_hours": 24
-}
+{ "progress_timeout_minutes": 5, "staleness_timeout_hours": 24, "expiration_timeout_hours": 24 }
 ```
-
----
 
 #### PUT /api/config
 
-Update global configuration settings.
+Update one or more global settings. Only the fields you supply change, but you must supply
+at least one — an empty object `{}` is rejected with `400`.
 
-**Request Body:**
+| Field | Range | Description |
+|-------|-------|-------------|
+| `progress_timeout_minutes` | 1–10080 | Minutes before a `progress` job becomes `timeout`. |
+| `staleness_timeout_hours` | 1–8760 | Hours before a `success` job becomes `stale`. |
+| `expiration_timeout_hours` | 1–8760 | Hours before a job is removed entirely. |
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `progress_timeout_minutes` | integer | No | Minutes before a "progress" job becomes "timeout" |
-| `staleness_timeout_hours` | integer | No | Hours before a "success" job becomes "stale" |
-
-**Example Request:**
-
-```json
-{
-  "progress_timeout_minutes": 10,
-  "staleness_timeout_hours": 48
-}
-```
-
-**Response:**
-
-```json
-{
-  "progress_timeout_minutes": 10,
-  "staleness_timeout_hours": 48
-}
-```
-
-**Errors:**
-- `400 Bad Request` - Invalid values (must be positive integers)
-
----
+Returns the full config object (same shape as `GET`). **Errors:** `400` (out-of-range value).
 
 #### GET /api/groups/{name}/config
 
-Get group-specific configuration overrides.
-
-**Path Parameters:**
-- `name` - Group name
-
-**Response:**
+Per-group overrides plus the effective (in-use) values.
 
 ```json
 {
-  "group": "nightly-builds",
+  "group": "ci",
+  "group_name": "ci",
   "progress_timeout_minutes": null,
-  "staleness_timeout_hours": 48,
+  "staleness_enabled": false,
+  "staleness_timeout_hours": null,
+  "expiration_timeout_hours": null,
   "effective_progress_timeout_minutes": 5,
-  "effective_staleness_timeout_hours": 48
+  "effective_staleness_timeout_hours": 24,
+  "effective_expiration_timeout_hours": 24
 }
 ```
 
-- `null` values indicate the group uses global defaults
-- `effective_*` fields show the actual timeout values in use
+- `null` override fields mean the group uses the global default.
+- `effective_*` show the values actually applied. `group` is a legacy alias for `group_name`.
 
-**Errors:**
-- `404 Not Found` - Group does not exist
-
----
+**Errors:** `404` (group does not exist).
 
 #### PUT /api/groups/{name}/config
 
-Update group-specific configuration overrides.
+Update group overrides. Supply at least one field (an empty object `{}` is rejected with
+`400`); send `null` to clear an override (revert to global). Ranges match `PUT /api/config`.
 
-**Path Parameters:**
-- `name` - Group name
+| Field | Type | Description |
+|-------|------|-------------|
+| `progress_timeout_minutes` | integer or null | Progress-timeout override. |
+| `staleness_timeout_hours` | integer or null | Staleness override. |
+| `staleness_enabled` | boolean | Whether `success` jobs in this group ever go `stale`. |
+| `expiration_timeout_hours` | integer or null | Expiration override. |
 
-**Request Body:**
+Cross-field rule: when `staleness_enabled` is true, the effective staleness window must be
+strictly less than the effective expiration window, otherwise `400`.
+
+Returns the full group config object (same shape as `GET`). **Errors:** `400`, `404`.
+
+---
+
+### Admin
+
+#### GET /api/admin/stats
+
+Storage and aggregate counts, for operator/admin tooling.
+
+```json
+{
+  "total_jobs": 42,
+  "total_groups": 6,
+  "jobs_by_status": { "success": 40, "error": 1, "progress": 1, "timeout": 0, "stale": 0 },
+  "database_size_bytes": 122880
+}
+```
+
+#### DELETE /api/admin/cleanup
+
+Bulk-delete old jobs (and groups left empty).
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `progress_timeout_minutes` | integer or null | No | Override for progress timeout, or null to use global |
-| `staleness_timeout_hours` | integer or null | No | Override for staleness timeout, or null to use global |
-
-**Example Request:**
-
-```json
-{
-  "staleness_timeout_hours": 72
-}
-```
-
-**Response:**
+| `older_than_days` | integer | yes | Delete jobs not updated within this many days (≥1). |
+| `statuses` | string[] | no | Statuses to delete (default `["stale", "timeout"]`). |
+| `dry_run` | boolean | no | If true, report what would be deleted without deleting. |
 
 ```json
-{
-  "group": "nightly-builds",
-  "progress_timeout_minutes": null,
-  "staleness_timeout_hours": 72,
-  "effective_progress_timeout_minutes": 5,
-  "effective_staleness_timeout_hours": 72
-}
+{ "deleted_jobs": 12, "deleted_groups": 1, "dry_run": false }
 ```
 
-**Errors:**
-- `400 Bad Request` - Invalid values
-- `404 Not Found` - Group does not exist
+**Errors:** `400` (missing/invalid `older_than_days`, `statuses`, or `dry_run`).
 
 ---
 
-## Job Status Values
+## Job object
 
-| Status | Description |
-|--------|-------------|
-| `success` | Job completed successfully |
-| `error` | Job failed with an error |
-| `progress` | Job is currently running |
-| `timeout` | Progress job exceeded the progress timeout (automatic) |
-| `stale` | Success job exceeded the staleness timeout (automatic) |
+Returned by status, job, and group-job endpoints:
 
----
+```json
+{
+  "id": 1,
+  "group_id": 1,
+  "group_name": "ci",
+  "name": "backend-tests",
+  "status": "success",
+  "message": "All 42 passed",
+  "acked": false,
+  "acked_at": null,
+  "expires_at": "2026-01-18T12:00:00Z",
+  "has_log": true,
+  "log_line_count": 120,
+  "log_truncated": false,
+  "log_updated_at": "2026-01-17T12:00:00Z",
+  "updated_at": "2026-01-17T12:00:00Z",
+  "created_at": "2026-01-17T10:00:00Z"
+}
+```
 
-## Background Timeout Checker
+Timestamps are whole-second UTC (`YYYY-MM-DDTHH:MM:SSZ`); nullable fields are present as
+`null` rather than omitted.
 
-A background process runs every 60 seconds to automatically update job statuses:
+## Job status values
 
-- Jobs with `progress` status are marked as `timeout` if they exceed `progress_timeout_minutes`
-- Jobs with `success` status are marked as `stale` if they exceed `staleness_timeout_hours`
+| Status | Usually set by | Description |
+|--------|----------------|-------------|
+| `success` | client | Job completed successfully. |
+| `error` | client | Job failed. |
+| `progress` | client | Job is currently running. |
+| `timeout` | server | A `progress` job exceeded its progress timeout. |
+| `stale` | server | A `success` job exceeded its staleness window (groups with staleness enabled). |
 
-Group-specific timeout overrides take precedence over global settings.
+`POST /api/status` accepts all five values; clients normally send `success`/`error`/`progress`
+and let the background worker assign `timeout`/`stale`.
+
+## Background maintenance
+
+A worker runs about every 60 seconds and:
+
+- marks `progress` jobs as `timeout` once they exceed `progress_timeout_minutes`;
+- marks `success` jobs as `stale` once they exceed `staleness_timeout_hours`, but only for
+  groups with staleness enabled (`staleness_enabled` is off by default);
+- removes jobs that have passed `expiration_timeout_hours`.
+
+Per-group overrides take precedence over the global settings.
 
 ---
 
 ## Real-Time Events (SSE)
 
-The server streams real-time updates over [Server-Sent Events](https://developer.mozilla.org/docs/Web/API/Server-sent_events). Connect an `EventSource` to `GET /api/events` (same host/port). The stream is `text/event-stream`, is never compressed, and emits a `: ping` comment heartbeat about every 25 seconds. `EventSource` reconnects automatically after a drop, so re-fetch your data on reconnect to recover any events missed during the outage.
+The server streams real-time updates over [Server-Sent Events](https://developer.mozilla.org/docs/Web/API/Server-sent_events).
+Connect an `EventSource` to `GET /api/events` (same host/port). The stream is
+`text/event-stream`, is never compressed, and emits a `: ping` comment heartbeat about every
+25 seconds. `EventSource` reconnects automatically after a drop, so re-fetch your data on
+reconnect to recover any events missed during the outage.
 
 ```js
 const events = new EventSource('/api/events')
@@ -447,7 +424,8 @@ events.addEventListener('status_update', (e) => {
 })
 ```
 
-Every event's `data` is a JSON object whose `schema_version` is `1`; id arrays are sorted ascending and timestamps are whole-second UTC (`YYYY-MM-DDTHH:MM:SSZ`).
+Every event's `data` is a JSON object whose `schema_version` is `1`; id arrays are sorted
+ascending and timestamps are whole-second UTC (`YYYY-MM-DDTHH:MM:SSZ`).
 
 | Event | When | Payload |
 |-------|------|---------|
@@ -462,10 +440,10 @@ On a global ack-all, `jobs_acked` has `group_id`/`group_name` of `null`.
 
 ---
 
-## Input Limits
+## Input limits
 
-| Field | Maximum Length |
-|-------|----------------|
+| Field | Maximum |
+|-------|---------|
 | Group name | 255 characters |
 | Job name | 255 characters |
 | Message | 4096 characters |
@@ -473,53 +451,16 @@ On a global ack-all, `jobs_acked` has `group_id`/`group_name` of `null`.
 
 ---
 
-## Environment Variables
+## Environment variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATABASE_URL` | `sqlite:///statshed.db` | SQLite database path (sqlite-only; 3-slash = relative, 4-slash = absolute). The server is **fresh-DB-only** — it creates and migrates an empty database and refuses a pre-existing/incompatible one. |
-| `HOST` | `127.0.0.1` | Server bind address (`::` to bind dual-stack in a container) |
-| `PORT` | `7828` | Server port |
-| `DEBUG` | `false` | `true` raises the `log/slog` level to DEBUG (verbose request logging) |
-| `CORS_ORIGINS` | _(localhost)_ | Comma-separated browser origins allowed to call the API (same-origin needs none) |
-| `LOG_UPLOAD_ENABLED` | `true` | Accept log uploads on `POST /api/status` |
-| `MAX_LOG_LINES` | `1000` | Maximum lines stored per log (excess is truncated) |
-| `MAX_JOBS_PAGE_SIZE` | `500` | Server cap on the `GET /api/jobs` `limit` page size |
-| `STATIC_DIR` | `./static` | Directory to serve the SPA from instead of the embedded build |
-| `STATIC_DISABLED` | `false` | `1`/`true` disables SPA serving (API-only) |
-| `SECRET_KEY` | _(unused)_ | Accepted but ignored by the Go server (kept for legacy `.env` compatibility) |
+The server is configured via environment variables; see the
+[Configuring the server](../README.md#configuring-the-server) section of the README for the
+server settings (`HOST`, `PORT`, `DATABASE_URL`, `DEBUG`, `CORS_ORIGINS`, `LOG_UPLOAD_ENABLED`,
+`MAX_LOG_LINES`, `MAX_JOBS_PAGE_SIZE`, `STATIC_DIR`/`STATIC_DISABLED`). A couple of
+internal/test-only variables also exist (`HEALTHCHECK_URL`, `STATSHED_TEST_HOOKS`).
 
----
+## CLI client
 
-## CLI Client
-
-The `statshed-cli` command-line tool provides convenient access to this API:
-
-```bash
-# Submit a status
-statshed-cli submit --group nightly-builds --job backend-tests --status success --message "All tests passed"
-
-# Check health
-statshed-cli health
-
-# List groups
-statshed-cli groups
-
-# Get group jobs
-statshed-cli jobs nightly-builds
-
-# Get or update global configuration
-statshed-cli config                          # View current config
-statshed-cli config --progress-timeout 10    # Update progress timeout
-statshed-cli config --staleness-timeout 48   # Update staleness timeout
-
-# Use JSON output
-statshed-cli health --json
-statshed-cli groups --json
-statshed-cli jobs nightly-builds --json
-
-# Connect to a different server
-statshed-cli --url http://myserver:7828 health
-```
-
-See `statshed-cli --help` for full usage information.
+The `statshed` CLI ([Go](https://github.com/statshed/statshed-gocli) /
+[Python](https://github.com/statshed/statshed-pycli)) wraps this API for use in scripts and
+pipelines. See [CLI clients](../README.md#cli-clients).
