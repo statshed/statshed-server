@@ -57,7 +57,7 @@ export default function GroupCard({ group }: GroupCardProps) {
     <Card
       to={`/groups/${encodeURIComponent(group.name)}`}
       status={group.health}
-      className="hover:border-primary-300 dark:hover:border-primary-700"
+      className="group"
       data-testid="group-card"
     >
       <CardBody>
@@ -69,13 +69,13 @@ export default function GroupCard({ group }: GroupCardProps) {
             <p className="text-sm text-gray-500 dark:text-gray-400">
               {jobCount} job{jobCount !== 1 ? 's' : ''}
               {ackedCount > 0 && (
-                <span className="ml-2 text-xs text-gray-400 dark:text-gray-500">
+                <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
                   ({ackedCount} acked)
                 </span>
               )}
             </p>
           </div>
-          <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
+          <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0 transition-all duration-200 motion-safe:group-hover:translate-x-0.5 group-hover:text-primary-500" />
         </div>
 
         {/* Mini status indicators and ack button row */}

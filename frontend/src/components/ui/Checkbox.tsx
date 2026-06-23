@@ -31,7 +31,7 @@ const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Checkbox(
             'h-4 w-4 rounded border',
             'bg-white dark:bg-gray-800',
             'text-primary-600 dark:text-primary-500',
-            'focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900',
+            'focus:outline-none focus:ring-2 focus:ring-primary-600 dark:focus:ring-primary-400 focus:ring-offset-2 dark:focus:ring-offset-gray-900',
             'disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed',
             error
               ? 'border-red-500'

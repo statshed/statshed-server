@@ -31,21 +31,23 @@ interface StatCardProps {
 function StatCard({ label, value, icon, color, href, subtitle }: StatCardProps) {
   const cardContent = (
     <div className="flex items-center gap-3">
-      <div className={`p-2 rounded-lg ${color}`}>{icon}</div>
+      <div className={`p-2.5 rounded-xl ring-1 ring-inset ring-black/[0.04] dark:ring-white/[0.06] ${color}`}>
+        {icon}
+      </div>
       <div>
-        <p className="text-2xl font-semibold text-gray-900 dark:text-white">
+        <p className="font-display text-3xl font-semibold tabular-nums text-gray-900 dark:text-white leading-none">
           {value}
         </p>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1.5">{label}</p>
         {subtitle && (
-          <p className="text-xs text-gray-400 dark:text-gray-500">{subtitle}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">{subtitle}</p>
         )}
       </div>
     </div>
   )
 
-  const baseClasses = 'bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4'
-  const clickableClasses = 'hover:border-primary-300 dark:hover:border-primary-600 hover:shadow-sm transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900'
+  const baseClasses = 'bg-white dark:bg-gray-800 rounded-xl border border-gray-200/80 dark:border-gray-700/80 p-4 shadow-sm shadow-gray-900/[0.03]'
+  const clickableClasses = 'hover:border-primary-300 dark:hover:border-primary-700/70 motion-safe:hover:-translate-y-0.5 hover:shadow-lg hover:shadow-gray-900/[0.08] transition-all duration-200 ease-out cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-600 dark:focus:ring-primary-400 focus:ring-offset-2 dark:focus:ring-offset-gray-900'
 
   if (href) {
     return (
@@ -109,24 +111,24 @@ export default function HealthStats({ health, isLoading }: HealthStatsProps) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="stagger grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           label="Total Jobs"
           value={total_jobs}
-          icon={<Layers className="w-5 h-5 text-gray-600" />}
-          color="bg-gray-100 dark:bg-gray-700"
+          icon={<Layers className="w-5 h-5 text-primary-600 dark:text-primary-400" />}
+          color="bg-primary-100 dark:bg-primary-500/15"
         />
         <StatCard
           label="Healthy"
           value={by_status.success || 0}
-          icon={<CheckCircle className="w-5 h-5 text-green-600" />}
+          icon={<CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />}
           color="bg-green-100 dark:bg-green-900/30"
           href="/jobs?status=success"
         />
         <StatCard
           label="Errors"
           value={unhealthy}
-          icon={<XCircle className="w-5 h-5 text-red-600" />}
+          icon={<XCircle className="w-5 h-5 text-red-600 dark:text-red-400" />}
           color="bg-red-100 dark:bg-red-900/30"
           href="/jobs?status=error,timeout,stale"
           subtitle={acked > 0 ? `${acked} acked` : undefined}
@@ -134,7 +136,7 @@ export default function HealthStats({ health, isLoading }: HealthStatsProps) {
         <StatCard
           label="In Progress"
           value={by_status.progress || 0}
-          icon={<Loader2 className="w-5 h-5 text-blue-600" />}
+          icon={<Loader2 className="w-5 h-5 text-blue-600 dark:text-blue-400 motion-safe:animate-spin [animation-duration:3s]" />}
           color="bg-blue-100 dark:bg-blue-900/30"
           href="/jobs?status=progress"
         />

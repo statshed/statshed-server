@@ -112,11 +112,11 @@ function DashboardContent() {
   const showingFilteredCount = filteredGroups && filteredGroups.length !== nonEmptyGroupCount
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 animate-rise">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
             Dashboard
           </h1>
           {health && !isLoading && (
@@ -134,7 +134,7 @@ function DashboardContent() {
       {isLoading && isSlow && (
         <p
           role="status"
-          className="text-sm text-amber-600 dark:text-amber-400"
+          className="text-sm text-amber-700 dark:text-amber-400"
         >
           Taking longer than usual… still trying to reach the server.
         </p>
@@ -182,10 +182,10 @@ function DashboardContent() {
                 key={option.value}
                 onClick={() => setHealthFilter(option.value)}
                 className={cn(
-                  'px-3 py-1.5 text-sm font-medium rounded-lg transition-colors',
+                  'px-3.5 py-1.5 text-sm font-medium rounded-full transition-all duration-150 motion-safe:active:scale-[0.97]',
                   healthFilter === option.value
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                    ? 'bg-primary-600 text-white shadow-sm shadow-primary-600/30'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 ring-1 ring-inset ring-gray-200 dark:ring-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white'
                 )}
               >
                 {option.label}

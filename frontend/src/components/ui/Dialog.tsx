@@ -87,8 +87,11 @@ export default function Dialog({
       onClick={handleBackdropClick}
       aria-labelledby={titleId}
       className={cn(
-        'backdrop:bg-black/50 backdrop:backdrop-blur-sm',
-        'bg-white dark:bg-gray-800 rounded-lg shadow-xl',
+        // AIDEV-NOTE: `dialog-animate` (index.css) plays a gentle entrance when the [open]
+        // attribute is set by showModal() — reduced-motion users get it instantly.
+        'dialog-animate',
+        'backdrop:bg-gray-950/60 backdrop:backdrop-blur-sm',
+        'bg-white dark:bg-gray-800 rounded-2xl shadow-2xl shadow-gray-950/40',
         'p-0 max-w-lg w-full mx-auto',
         'border border-gray-200 dark:border-gray-700',
         className

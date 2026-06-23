@@ -11,10 +11,11 @@
  * same-color head only the LED was visible.
  *
  * AIDEV-NOTE: The knockout color is deliberately coupled to the header background
- * (bg-white dark:bg-gray-800 in Header.tsx). This logo currently only renders in the
- * header. If it is ever placed on a different background, update the knockout color here
- * to match (or switch the knockouts to an SVG <mask> for true transparency) — otherwise
- * the face and lamp outlines will show the wrong color.
+ * (bg-white dark:bg-gray-800 in Header.tsx). It also renders on NotFound.tsx, which
+ * keeps the coupling valid by seating the mascot inside a `bg-white dark:bg-gray-800`
+ * circle (same color). If it is ever placed on a DIFFERENT background, update the knockout
+ * color here to match (or switch the knockouts to an SVG <mask> for true transparency) —
+ * otherwise the face and lamp outlines will show the wrong color.
  *
  * The lamp lens uses the overall-health color (reusing HEALTH_STATUS_COLORS). While work
  * is in progress a crisp ring "pings" outward from the lamp (.animate-mascot-ping in

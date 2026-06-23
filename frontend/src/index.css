@@ -1,77 +1,222 @@
 @import "tailwindcss";
 
 /*
- * AIDEV-NOTE: Tailwind CSS v4 configuration
- * Uses CSS-first approach with @theme directive
- * Dark mode uses class strategy for manual toggle support
- * The @custom-variant enables class-based dark mode (requires 'dark' class on <html>)
+ * AIDEV-NOTE: "The Lookout" theme — StatShed's mascot is a watchdog with a headlamp
+ * keeping watch over your systems through the night. The whole UI is dressed as a cozy,
+ * lamp-lit ranger station rather than cold corporate SaaS:
+ *   - brand accent = honey/marigold AMBER (the headlamp glow), replacing the old generic blue
+ *   - every neutral is a WARM umber/parchment ramp (cream paper in light, lamp-lit espresso in dark)
+ *   - display type is Fraunces (warm soft-serif); UI is Hanken Grotesk; logs are JetBrains Mono
+ *
+ * Tailwind v4, CSS-first via @theme. Dark mode uses the class strategy (manual toggle).
+ *
+ * AIDEV-NOTE: Fonts are SELF-HOSTED (see public/fonts/*.woff2) — never a CDN. The production
+ * CSP is `font-src 'self'` (internal/api/middleware.go, asserted by contracttest/security_test.go
+ * and internal/api/api_test.go), and the single-binary deploy is meant to run offline/air-gapped.
+ * Same-origin woff2 satisfies both. If you add a face, drop the woff2 in public/fonts (Vite copies
+ * it verbatim into dist, embedded by the Go binary) — do NOT add a Google Fonts <link>.
  */
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* ── Self-hosted variable fonts ─────────────────────────────────────────── */
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/fraunces-variable.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Fraunces';
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/fraunces-italic-variable.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Hanken Grotesk';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/hanken-grotesk-variable.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-variable.woff2') format('woff2');
+}
+
 @theme {
-  /* Custom color palette for StatShed */
-  --color-primary-50: #eff6ff;
-  --color-primary-100: #dbeafe;
-  --color-primary-200: #bfdbfe;
-  --color-primary-300: #93c5fd;
-  --color-primary-400: #60a5fa;
-  --color-primary-500: #3b82f6;
-  --color-primary-600: #2563eb;
-  --color-primary-700: #1d4ed8;
-  --color-primary-800: #1e40af;
-  --color-primary-900: #1e3a8a;
-  --color-primary-950: #172554;
+  /* ── Type ─────────────────────────────────────────────────────────────── */
+  --font-sans: 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', 'Menlo', monospace;
 
-  /* Status colors */
-  --color-success-50: #f0fdf4;
-  --color-success-100: #dcfce7;
-  --color-success-200: #bbf7d0;
-  --color-success-500: #22c55e;
-  --color-success-600: #16a34a;
-  --color-success-700: #15803d;
-  --color-success-800: #166534;
-  --color-success-900: #14532d;
+  /* ── Brand "Headlamp" amber (was generic blue). Kept under the `primary-*`
+       name so every existing `bg-primary-600` / `text-primary-400` / `ring-primary-500`
+       lights up amber with zero churn. 600 is dark enough for white button text (AA). */
+  --color-primary-50: #fdf8ec;
+  --color-primary-100: #fbeecb;
+  --color-primary-200: #f6db94;
+  --color-primary-300: #f0c25e;
+  --color-primary-400: #e8a838;
+  --color-primary-500: #d98a1f;
+  /* AIDEV-NOTE: 600 is the "action" shade — button bg with white text AND link text on
+     warm-light surfaces — so it must clear WCAG AA (4.5:1) in both roles. #9c5c0a gives
+     ~5.3:1 on white and ~4.9:1 on the cream page bg. Don't lighten it past ~#a8620c
+     (drops links below AA) without re-checking. Buttons hover to 700 (darker), never 500. */
+  --color-primary-600: #9c5c0a;
+  --color-primary-700: #95560c;
+  --color-primary-800: #784511;
+  --color-primary-900: #653a13;
+  --color-primary-950: #3a1e07;
 
-  --color-error-50: #fef2f2;
-  --color-error-100: #fee2e2;
-  --color-error-200: #fecaca;
-  --color-error-500: #ef4444;
-  --color-error-600: #dc2626;
-  --color-error-700: #b91c1c;
-  --color-error-800: #991b1b;
-  --color-error-900: #7f1d1d;
+  /* ── Warm neutral ramp. Overrides Tailwind's cool grays so the hundreds of
+       existing `gray-*` utilities turn warm in one stroke: parchment in light,
+       lamp-lit espresso in dark. */
+  --color-gray-50: #f8f5ef;
+  --color-gray-100: #f0ebe1;
+  --color-gray-200: #e4ddcf;
+  --color-gray-300: #d3c9b6;
+  --color-gray-400: #a99e89;
+  /* AIDEV-NOTE: gray-500 is body/secondary text. At #7c7363 it was 4.30:1 on the cream page
+     bg (gray-50) — just under AA. #776e5f clears 4.5:1 on both cream (~4.6) and white cards. */
+  --color-gray-500: #776e5f;
+  --color-gray-600: #574f42;
+  --color-gray-700: #3a342a;
+  --color-gray-800: #241f18;
+  --color-gray-900: #1a160f;
+  --color-gray-950: #100d08;
 
-  --color-warning-50: #fffbeb;
-  --color-warning-100: #fef3c7;
-  --color-warning-200: #fde68a;
-  --color-warning-500: #f59e0b;
-  --color-warning-600: #d97706;
-  --color-warning-700: #b45309;
-  --color-warning-800: #92400e;
-  --color-warning-900: #78350f;
+  /* Softer, friendlier corner radii across the board. */
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
 
-  /* Animation durations */
   --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Base layer customizations */
+/* ── Base ───────────────────────────────────────────────────────────────── */
 @layer base {
   html {
     @apply antialiased;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
   body {
     @apply bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100;
-    @apply min-h-screen;
+    @apply min-h-screen font-sans;
+    font-feature-settings: 'liga' 1, 'calt' 1; /* standard + contextual ligatures (safe everywhere) */
   }
 
-  /* Focus ring defaults */
+  /* AIDEV-NOTE: The "headlamp glow" — a warm radial wash bleeding down from the top of the
+     page, as if the dog's lamp were lighting the room. A whisper of film grain rides on top
+     (::after) for analog tooth. Both are fixed, pointer-events:none, and sit behind #root
+     (negative z-index paints above the body bg-color but below content). */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(1200px 620px at 50% -12%, rgba(216, 138, 31, 0.12), transparent 62%),
+      radial-gradient(820px 520px at 92% 4%, rgba(216, 138, 31, 0.06), transparent 58%);
+  }
+  .dark body::before {
+    background:
+      radial-gradient(1150px 640px at 50% -10%, rgba(245, 184, 84, 0.12), transparent 64%),
+      radial-gradient(760px 520px at 10% 6%, rgba(150, 100, 45, 0.14), transparent 60%);
+  }
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.035;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .dark body::after {
+    opacity: 0.06;
+    mix-blend-mode: overlay;
+  }
+
+  /* Display serif for the expressive headings (wordmark, page titles, section heads).
+     h3 and below stay in the UI sans for dense, scannable data. */
+  h1,
+  h2 {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.011em;
+  }
+
+  /* AIDEV-NOTE: focus outline uses primary-600 (not 500): WCAG 2.4.11/1.4.11 want a 3:1
+     focus indicator, and primary-500 (#d98a1f) is only ~2.5–2.8:1 on the light surfaces.
+     primary-600 clears 3:1 in both themes. Component rings additionally brighten to
+     primary-400 in dark for extra visibility. */
   :focus-visible {
-    @apply outline-2 outline-offset-2 outline-primary-500;
+    @apply outline-2 outline-offset-2 outline-primary-600;
+  }
+  .dark :focus-visible {
+    outline-color: var(--color-primary-400);
+  }
+
+  ::selection {
+    background-color: rgba(216, 138, 31, 0.25);
+  }
+
+  /* Warm, slim scrollbars to match the station. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-gray-300) transparent;
+  }
+  .dark * {
+    scrollbar-color: var(--color-gray-700) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-gray-300);
+    border-radius: 9999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    background-color: var(--color-gray-700);
   }
 }
 
-/* Custom component utilities */
+/* ── Utilities ──────────────────────────────────────────────────────────── */
 @layer utilities {
+  /* A soft amber halo — used behind the header mascot and hero moments. */
+  .lamp-glow {
+    position: relative;
+  }
+  .lamp-glow::before {
+    content: '';
+    position: absolute;
+    inset: -45%;
+    border-radius: 9999px;
+    background: radial-gradient(circle, rgba(232, 168, 56, 0.45), transparent 68%);
+    filter: blur(8px);
+    opacity: 0.55;
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  .font-display {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+  }
+
   .animate-pulse-slow {
     animation: var(--animate-pulse-slow);
   }
@@ -84,6 +229,45 @@
     transform-box: fill-box;
     transform-origin: center;
     animation: mascot-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+
+  /* Shimmer sweep for loading skeletons (richer than a flat pulse). */
+  .shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  .shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+    animation: shimmer 1.7s ease-in-out infinite;
+  }
+  .dark .shimmer::after {
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent);
+  }
+
+  /* AIDEV-NOTE: Entrance choreography. `.animate-rise` plays once on mount; `.stagger`
+     cascades the same rise across direct children (grids, lists) for a gentle reveal.
+     Everything here is gated behind prefers-reduced-motion: no-preference, so motion-averse
+     users get the final state instantly with no animation. */
+  @media (prefers-reduced-motion: no-preference) {
+    .animate-rise {
+      animation: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    .stagger > * {
+      animation: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    .stagger > *:nth-child(1) { animation-delay: 0.04s; }
+    .stagger > *:nth-child(2) { animation-delay: 0.08s; }
+    .stagger > *:nth-child(3) { animation-delay: 0.12s; }
+    .stagger > *:nth-child(4) { animation-delay: 0.16s; }
+    .stagger > *:nth-child(5) { animation-delay: 0.20s; }
+    .stagger > *:nth-child(6) { animation-delay: 0.24s; }
+    .stagger > *:nth-child(7) { animation-delay: 0.28s; }
+    .stagger > *:nth-child(8) { animation-delay: 0.32s; }
+    .stagger > *:nth-child(n + 9) { animation-delay: 0.36s; }
   }
 }
 
@@ -99,9 +283,48 @@
   }
 }
 
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* AIDEV-NOTE: The animation runs the instant the [open] attribute appears (showModal()),
+   because that's when this rule's `animation` property starts matching the element. */
+@media (prefers-reduced-motion: no-preference) {
+  dialog.dialog-animate[open] {
+    animation: dialog-in 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-mascot-ping {
     animation: none;
     opacity: 0.4;
+  }
+  .shimmer::after {
+    animation: none;
   }
 }

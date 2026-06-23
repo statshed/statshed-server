@@ -3,7 +3,8 @@
  * Displays job name, status badge, message, and timestamp
  * Optionally shows group name with link when showGroup is true
  * Includes ack button for error/timeout/stale jobs and delete button
- * AIDEV-NOTE: Card opacity fades as job approaches expiration (100% → 50%)
+ * AIDEV-NOTE: An expiring/acked card RECEDES via a page-colored scrim over its chrome (not
+ * whole-card opacity), so the text + status badge stay readable (WCAG AA). See below.
  * AIDEV-NOTE: Shows "View logs" button when job has attached log file
  */
 
@@ -52,12 +53,26 @@ export default function JobCard({ job, showGroup = false }: JobCardProps) {
     })
   }
 
-  // AIDEV-NOTE: Use inline style for fade opacity since Tailwind can't do dynamic values
-  // The acked state still uses opacity-60 class which multiplies with the fade opacity
-  const fadeStyle = isFading ? { opacity } : undefined
+  // AIDEV-NOTE: De-emphasis (expiring + acked) is painted as a page-colored SCRIM over the
+  // card chrome, NOT as opacity on the whole card. Whole-card opacity dimmed the text and
+  // status badge below WCAG AA; a scrim tints only the background so the card visibly recedes
+  // while its foreground stays fully readable. `opacity` (1.0→0.5, from useFadePercentage)
+  // becomes scrim alpha = 1 - opacity; acked adds a fixed recede; the two take the max.
+  // The scrim is clipped to the card's rounded corners by the Card's `overflow-hidden`.
+  const fadeScrim = isFading ? 1 - opacity : 0
+  const ackedScrim = isAcked ? 0.45 : 0
+  const scrimOpacity = Math.max(fadeScrim, ackedScrim)
 
   return (
-    <Card className={cn(isAcked && 'opacity-60')} style={fadeStyle}>
+    <Card>
+      {scrimOpacity > 0 && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-0 bg-gray-50 dark:bg-gray-900"
+          style={{ opacity: scrimOpacity }}
+        />
+      )}
+      <div className="relative z-10">
       <CardBody className="py-3">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
@@ -148,8 +163,8 @@ export default function JobCard({ job, showGroup = false }: JobCardProps) {
                 className={cn(
                   'inline-flex items-center gap-1 text-xs whitespace-nowrap',
                   isFading
-                    ? 'text-amber-600 dark:text-amber-400'
-                    : 'text-gray-400 dark:text-gray-500'
+                    ? 'text-amber-700 dark:text-amber-400'
+                    : 'text-gray-500 dark:text-gray-400'
                 )}
                 title={`Expires: ${new Date(job.expires_at).toLocaleString()}`}
               >
@@ -160,6 +175,7 @@ export default function JobCard({ job, showGroup = false }: JobCardProps) {
           </div>
         </div>
       </CardBody>
+      </div>
 
       <Dialog
         isOpen={showDeleteConfirm}

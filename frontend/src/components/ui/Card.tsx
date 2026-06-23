@@ -24,10 +24,11 @@ type CardProps = CardAsDiv | CardAsLink
 
 export function Card({ children, className, status, to, ...props }: CardProps) {
   const cardClasses = cn(
-    'bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700',
-    'shadow-sm transition-shadow',
-    status && 'relative overflow-hidden',
-    to && 'hover:shadow-md cursor-pointer',
+    'bg-white dark:bg-gray-800 rounded-xl border border-gray-200/80 dark:border-gray-700/80',
+    'shadow-sm shadow-gray-900/[0.03] transition-all duration-200 ease-out',
+    'relative overflow-hidden',
+    to &&
+      'cursor-pointer hover:shadow-lg hover:shadow-gray-900/[0.08] motion-safe:hover:-translate-y-0.5 hover:border-primary-300 dark:hover:border-primary-700/70',
     className
   )
 
@@ -36,7 +37,7 @@ export function Card({ children, className, status, to, ...props }: CardProps) {
       {status && (
         <div
           className={cn(
-            'absolute top-0 left-0 right-0 h-1',
+            'absolute top-0 left-0 right-0 h-1.5',
             HEALTH_STATUS_BG_COLORS[status]
           )}
         />
