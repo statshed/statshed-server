@@ -8,6 +8,18 @@ import (
 	"github.com/statshed/statshed-server/internal/config"
 )
 
+func TestCheckNoArgs(t *testing.T) {
+	if err := checkNoArgs(nil); err != nil {
+		t.Errorf("checkNoArgs(nil) = %v, want nil", err)
+	}
+	if err := checkNoArgs([]string{}); err != nil {
+		t.Errorf("checkNoArgs([]) = %v, want nil", err)
+	}
+	if err := checkNoArgs([]string{"version"}); err == nil {
+		t.Error("checkNoArgs([version]) = nil, want error")
+	}
+}
+
 func TestHealthcheckURL(t *testing.T) {
 	cases := []struct {
 		host string

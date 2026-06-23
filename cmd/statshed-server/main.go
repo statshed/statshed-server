@@ -33,6 +33,15 @@ func main() {
 		"probe the local /api/health endpoint; exit 0 if healthy, 1 otherwise")
 	flag.Parse()
 
+	// Reject stray positional args (e.g. `statshed-server version` without the dashes)
+	// rather than silently dropping them and falling through to start the server. Exit 2
+	// to match flag's own ExitOnError code for unknown flags.
+	if err := checkNoArgs(flag.Args()); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		flag.Usage()
+		os.Exit(2)
+	}
+
 	if *showVersion {
 		fmt.Println(version)
 		return
@@ -49,6 +58,16 @@ func main() {
 	}
 
 	os.Exit(run(cfg))
+}
+
+// checkNoArgs returns a usage error when extra positional arguments survive flag parsing.
+// This binary takes only flags, so any leftover token (typically a misspelled flag missing
+// its dashes) is a mistake we surface rather than ignore.
+func checkNoArgs(args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf("unexpected argument(s): %v", args)
+	}
+	return nil
 }
 
 // run configures logging, opens + migrates the store (fail-fast on a non-empty DB), and
