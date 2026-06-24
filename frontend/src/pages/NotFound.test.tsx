@@ -17,7 +17,9 @@ describe('NotFound', () => {
       </MemoryRouter>
     )
 
-    expect(screen.getByRole('heading', { name: /page not found/i })).toBeInTheDocument()
+    // AIDEV-NOTE: Copy is intentionally playful ("This trail's gone cold") to match the
+    // Lookout theme — assert the recoverable not-found heading + the way back, not exact words.
+    expect(screen.getByRole('heading', { name: /trail's gone cold/i })).toBeInTheDocument()
     const link = screen.getByRole('link', { name: /dashboard/i })
     expect(link).toHaveAttribute('href', '/')
   })

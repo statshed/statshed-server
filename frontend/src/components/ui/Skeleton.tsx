@@ -20,7 +20,7 @@ export function Skeleton({ className, ...rest }: SkeletonProps) {
       aria-busy="true"
       aria-label="Loading"
       className={cn(
-        'animate-pulse rounded-md bg-gray-200 dark:bg-gray-700',
+        'shimmer rounded-md bg-gray-200/80 dark:bg-gray-700/60',
         className
       )}
       {...rest}

@@ -18,14 +18,21 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantClasses: Record<ButtonVariant, string> = {
+  // AIDEV-NOTE: hover DARKENS to primary-700 (keeps white text ≥ AA). Never hover to
+  // primary-500 here — white-on-500 is ~2.8:1 and fails contrast.
   primary:
-    'bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500 disabled:bg-primary-400',
+    'bg-primary-600 text-white shadow-sm shadow-primary-900/20 hover:bg-primary-700 hover:shadow-md hover:shadow-primary-600/30 focus:ring-primary-600 dark:focus:ring-primary-400 disabled:bg-primary-400 disabled:shadow-none',
+  // AIDEV-NOTE: all variants share the amber focus ring (primary-600 light / primary-400 dark)
+  // — gray rings (gray-400/500) are < 3:1 on the warm-light surfaces and fail the focus-
+  // indicator contrast threshold once the browser outline is removed (see base classes).
   secondary:
-    'bg-gray-100 text-gray-900 hover:bg-gray-200 focus:ring-gray-500 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600',
+    'bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200 hover:border-gray-300 focus:ring-primary-600 dark:focus:ring-primary-400 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600',
   ghost:
-    'text-gray-700 hover:bg-gray-100 focus:ring-gray-500 dark:text-gray-300 dark:hover:bg-gray-800',
+    'text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:ring-primary-600 dark:focus:ring-primary-400 dark:text-gray-300 dark:hover:bg-gray-700/60 dark:hover:text-white',
+  // AIDEV-NOTE: like primary, danger hover DARKENS (red-700) — hovering to red-500 is
+  // ~3.8:1 white-on-red and fails AA.
   danger:
-    'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500 disabled:bg-red-400',
+    'bg-red-600 text-white shadow-sm shadow-red-900/20 hover:bg-red-700 hover:shadow-md hover:shadow-red-600/30 focus:ring-red-500 disabled:bg-red-400 disabled:shadow-none',
 }
 
 const sizeClasses: Record<ButtonSize, string> = {
@@ -51,9 +58,10 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
       ref={ref}
       disabled={disabled || isLoading}
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors',
-        'focus:outline-none focus:ring-2 focus:ring-offset-2',
-        'disabled:cursor-not-allowed disabled:opacity-60',
+        'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all duration-150 ease-out',
+        'focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-900',
+        'motion-safe:active:scale-[0.98]',
+        'disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100',
         variantClasses[variant],
         sizeClasses[size],
         className

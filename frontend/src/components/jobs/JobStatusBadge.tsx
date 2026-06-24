@@ -28,7 +28,9 @@ export default function JobStatusBadge({
         'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
         JOB_STATUS_COLORS[status],
         status === 'progress' && 'animate-pulse',
-        acked && 'line-through opacity-70',
+        // AIDEV-NOTE: acked is signalled by line-through + the " (acked)" suffix below — NOT by
+        // dimming. opacity here would drop the small text-xs chip below WCAG AA; keep it opaque.
+        acked && 'line-through',
         // AIDEV-NOTE: Subtle visual indicator for expiring jobs - dashed border
         isExpiring && !acked && 'ring-1 ring-amber-400/50 dark:ring-amber-500/50',
         className

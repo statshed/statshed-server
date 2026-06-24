@@ -43,12 +43,17 @@ export const BACKEND_URL = getBackendUrl()
 /**
  * Status badge color classes for job statuses
  */
+// AIDEV-NOTE: Status pill colors. Each carries a subtle inset ring so the pill reads as a
+// crisp "chip" against the warm surfaces of the Lookout theme (light + dark tuned separately).
+// AIDEV-NOTE: -800 text on the -100 chip bg clears WCAG AA (4.5:1) for this small (text-xs)
+// text — -700 lands at ~4.5 and dips under for green. Don't lighten the light-mode text past
+// -800 without re-checking contrast.
 export const JOB_STATUS_COLORS: Record<JobStatus, string> = {
-  success: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-  error: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-  progress: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-  timeout: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-  stale: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
+  success: 'bg-green-100 text-green-800 ring-1 ring-inset ring-green-600/20 dark:bg-green-500/15 dark:text-green-300 dark:ring-green-400/25',
+  error: 'bg-red-100 text-red-800 ring-1 ring-inset ring-red-600/20 dark:bg-red-500/15 dark:text-red-300 dark:ring-red-400/25',
+  progress: 'bg-blue-100 text-blue-800 ring-1 ring-inset ring-blue-600/20 dark:bg-blue-500/15 dark:text-blue-300 dark:ring-blue-400/25',
+  timeout: 'bg-red-100 text-red-800 ring-1 ring-inset ring-red-600/20 dark:bg-red-500/15 dark:text-red-300 dark:ring-red-400/25',
+  stale: 'bg-orange-100 text-orange-800 ring-1 ring-inset ring-orange-600/20 dark:bg-orange-500/15 dark:text-orange-300 dark:ring-orange-400/25',
 }
 
 /**

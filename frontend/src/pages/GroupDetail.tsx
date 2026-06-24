@@ -115,19 +115,19 @@ function GroupDetailContent() {
   const showingFilteredCount = filteredJobs && jobs && filteredJobs.length !== jobs.length
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-rise">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-3">
           <Link
             to="/"
-            className="p-2 -ml-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            className="p-2 -ml-2 text-gray-500 hover:text-primary-600 dark:text-gray-400 dark:hover:text-primary-400 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors"
             aria-label="Back to dashboard"
           >
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
               {decodedGroupName}
             </h1>
             {configLoading ? (
@@ -190,10 +190,10 @@ function GroupDetailContent() {
                 key={option.value}
                 onClick={() => setStatusFilter(option.value)}
                 className={cn(
-                  'px-3 py-1.5 text-sm font-medium rounded-lg transition-colors',
+                  'px-3.5 py-1.5 text-sm font-medium rounded-full transition-all duration-150 motion-safe:active:scale-[0.97]',
                   statusFilter === option.value
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                    ? 'bg-primary-600 text-white shadow-sm shadow-primary-600/30'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 ring-1 ring-inset ring-gray-200 dark:ring-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white'
                 )}
               >
                 {option.label}
