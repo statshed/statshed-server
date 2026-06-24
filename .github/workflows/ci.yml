@@ -111,10 +111,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # AIDEV-NOTE: `--with-deps` shells out to apt-get, which has intermittently WEDGED in
-      # CI (seen on the live-e2e job). DEBIAN_FRONTEND=noninteractive stops apt blocking on a
-      # debconf prompt; timeout-minutes caps a wedge at a fast fail (re-runnable) instead of
-      # hanging to the 6h job limit. Keep both Playwright-install steps in step.
+      # AIDEV-NOTE: This (Node 22) hermetic job uses Playwright's BUNDLED chromium, so it must
+      # install it. timeout-minutes is a fail-fast guard: `playwright install` can wedge in
+      # post-download browser extraction (it does so reliably under Node 24 — see the live-e2e
+      # job, which sidesteps the bundled browser). DEBIAN_FRONTEND=noninteractive keeps the
+      # --with-deps apt step from blocking on a prompt.
       - name: Install Playwright browser
         timeout-minutes: 8
         env:
@@ -179,13 +180,20 @@ jobs:
       - name: Install frontend deps
         run: cd frontend && npm ci
 
-      # AIDEV-NOTE: hardened against the recurring apt-get wedge — see the matching note in the
-      # e2e job above (noninteractive apt + fail-fast timeout).
-      - name: Install Playwright browser
-        timeout-minutes: 8
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: cd frontend && npx playwright install --with-deps chromium
+      # AIDEV-NOTE: The live spec launches the runner's PREINSTALLED system Google Chrome via
+      # PLAYWRIGHT_CHROMIUM_BIN (see playwright.live.config.ts -> launchOptions.executablePath and
+      # the `live-e2e` Make target), so we deliberately do NOT run `playwright install` here.
+      # Downloading the bundled chromium wedged indefinitely in post-download extraction under this
+      # job's Node 24 (Playwright 1.49 predates Node 24 support); the binary was never even used.
+      # Node 24 is required for unflagged `node:sqlite` in the spec, so we keep it and bring our own
+      # browser. Pin PLAYWRIGHT_CHROMIUM_BIN explicitly and fail loudly if Chrome is missing, rather
+      # than letting the gate silently fall back to a non-existent bundled browser.
+      - name: Point the live gate at system Chrome
+        run: |
+          CHROME="$(command -v google-chrome || command -v google-chrome-stable || true)"
+          test -n "$CHROME" || { echo "::error::google-chrome not found on the runner"; exit 1; }
+          echo "Using $CHROME ($("$CHROME" --version))"
+          echo "PLAYWRIGHT_CHROMIUM_BIN=$CHROME" >> "$GITHUB_ENV"
 
       # Builds the Go binary, boots it (:7828) + Vite (:7827), and runs the non-mocked spec
       # through the proxy (unbuffered delivery + reconnect-driven refetch). Runs every PR
