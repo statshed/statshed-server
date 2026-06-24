@@ -111,7 +111,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # AIDEV-NOTE: `--with-deps` shells out to apt-get, which has intermittently WEDGED in
+      # CI (seen on the live-e2e job). DEBIAN_FRONTEND=noninteractive stops apt blocking on a
+      # debconf prompt; timeout-minutes caps a wedge at a fast fail (re-runnable) instead of
+      # hanging to the 6h job limit. Keep both Playwright-install steps in step.
       - name: Install Playwright browser
+        timeout-minutes: 8
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: npx playwright install --with-deps chromium
 
       # CI=true (set by GitHub Actions) makes Playwright start its own Vite dev
@@ -172,7 +179,12 @@ jobs:
       - name: Install frontend deps
         run: cd frontend && npm ci
 
+      # AIDEV-NOTE: hardened against the recurring apt-get wedge — see the matching note in the
+      # e2e job above (noninteractive apt + fail-fast timeout).
       - name: Install Playwright browser
+        timeout-minutes: 8
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: cd frontend && npx playwright install --with-deps chromium
 
       # Builds the Go binary, boots it (:7828) + Vite (:7827), and runs the non-mocked spec
