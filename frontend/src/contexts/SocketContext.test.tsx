@@ -104,6 +104,20 @@ describe('SocketContext realtime invalidation', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.health })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.groups })
   })
+
+  // I16: health_update is emitted by the background worker on timeout/stale transitions. It must
+  // invalidate queryKeys.jobs so an open Jobs page (byStatus) reflects the new status; groups
+  // already covers groupJobs via prefix matching.
+  it('health_update invalidates jobs (Jobs page) as well as health and groups', () => {
+    const { invalidateSpy } = renderProvider()
+    invalidateSpy.mockClear()
+
+    fire('health_update', {})
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.jobs })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.health })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.groups })
+  })
 })
 
 describe('SocketContext reconnect resync', () => {

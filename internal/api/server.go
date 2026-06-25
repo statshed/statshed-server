@@ -20,15 +20,21 @@ type Server struct {
 }
 
 // NewServer builds the server. WriteTimeout is intentionally 0 so GET /api/events can
-// stream indefinitely (D15); request reads are still bounded by ReadHeaderTimeout/
-// ReadTimeout, and idle keep-alive connections by IdleTimeout (S4).
+// stream indefinitely (D15). ReadHeaderTimeout bounds header-slowloris; IdleTimeout bounds idle
+// keep-alives (S4).
+//
+// ReadTimeout (I8) is a generous 5m, not 30s: it bounds the WHOLE request including the body, so
+// a too-tight value aborts a legitimate slow (but <1MB) multipart log upload mid-transfer — the
+// Python (gevent) server imposed no read deadline. 5m still bounds a stalled connection while
+// allowing a ~3.4 KB/s floor for a 1MB body; the body size itself is capped by bodyLimit +
+// MaxBytesReader (MAX_CONTENT_LENGTH).
 func NewServer(cfg config.Config, handler http.Handler) *Server {
 	return &Server{
 		http: &http.Server{
 			Addr:              net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
 			Handler:           handler,
 			ReadHeaderTimeout: 5 * time.Second,
-			ReadTimeout:       30 * time.Second,
+			ReadTimeout:       5 * time.Minute,
 			IdleTimeout:       120 * time.Second,
 		},
 	}

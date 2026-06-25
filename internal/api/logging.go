@@ -35,6 +35,11 @@ func (s *statusRecorder) Flush() {
 	}
 }
 
+// Unwrap exposes the wrapped writer so http.ResponseController can reach the base
+// connection (e.g. SetWriteDeadline for the SSE per-write deadline, I4). Without it the
+// controller stops at this wrapper and reports ErrUnsupported.
+func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
 // requestLogger logs method/path/status/duration for each request via slog. The loopback
 // health probe is logged at DEBUG (compose/healthcheck loops hit it frequently and would
 // otherwise spam INFO). Logging is NOT part of the HTTP contract (C4).

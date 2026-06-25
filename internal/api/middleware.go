@@ -107,15 +107,43 @@ func (g *gzipResponseWriter) WriteHeader(status int) {
 		return
 	}
 	g.wroteHeader = true
-	ct := g.Header().Get("Content-Type")
-	// Don't compress SSE (breaks streaming) or an already-encoded body.
-	if g.Header().Get("Content-Encoding") == "" && !strings.HasPrefix(ct, "text/event-stream") {
+	if g.compressible(status) {
 		g.Header().Set("Content-Encoding", "gzip")
 		g.Header().Del("Content-Length") // compressed length differs
 		g.gz = gzip.NewWriter(g.ResponseWriter)
 	}
 	g.ResponseWriter.WriteHeader(status)
 }
+
+// compressible reports whether a response with this status should be gzipped. It excludes:
+// an already-encoded body; SSE (compression breaks streaming, M2/D15); range/partial responses
+// (a Content-Range describes UNCOMPRESSED bytes, so gzipping the slice corrupts it, I5); and
+// bodiless statuses (1xx, 204, 205, 206, 304, 416) where wrapping would emit a stray gzip
+// stream onto a body that must be empty or is a byte range.
+func (g *gzipResponseWriter) compressible(status int) bool {
+	if g.Header().Get("Content-Encoding") != "" {
+		return false
+	}
+	if strings.HasPrefix(g.Header().Get("Content-Type"), "text/event-stream") {
+		return false
+	}
+	if g.Header().Get("Content-Range") != "" {
+		return false
+	}
+	switch {
+	case status < 200: // 1xx informational
+		return false
+	case status == http.StatusNoContent, status == http.StatusResetContent,
+		status == http.StatusPartialContent, status == http.StatusNotModified,
+		status == http.StatusRequestedRangeNotSatisfiable:
+		return false
+	}
+	return true
+}
+
+// Unwrap exposes the wrapped writer so http.ResponseController can reach the base connection
+// (e.g. the SSE per-write deadline, I4). Without it the controller stops here.
+func (g *gzipResponseWriter) Unwrap() http.ResponseWriter { return g.ResponseWriter }
 
 func (g *gzipResponseWriter) Write(b []byte) (int, error) {
 	if !g.wroteHeader {

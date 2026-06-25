@@ -127,10 +127,16 @@ func insertJobRow(ctx context.Context, tx *sql.Tx, groupID int, p UpsertParams, 
 	logTruncated := 0
 	if p.Log != nil {
 		logContent = &p.Log.Content
-		lc := p.Log.LineCount
-		logLineCount = &lc
 		logTruncated = boolInt(p.Log.Truncated)
-		logUpdatedAt = &nowStored
+		// Match Python's `if log_content` guard on the INSERT path (I14): an empty log file
+		// stores the (empty) content — so has_log (log_content IS NOT NULL) is true — but leaves
+		// log_line_count and log_updated_at NULL. The UPDATE path intentionally does NOT guard
+		// (it stores 0/now), which Go already matched; this only aligns the insert path.
+		if p.Log.Content != "" {
+			lc := p.Log.LineCount
+			logLineCount = &lc
+			logUpdatedAt = &nowStored
+		}
 	}
 	_, err := tx.ExecContext(ctx,
 		"INSERT INTO jobs (group_id, name, status, message, acked, acked_at, expires_at, "+

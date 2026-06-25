@@ -9,6 +9,9 @@ import (
 	"github.com/statshed/statshed-server/internal/store"
 )
 
+// maxCleanupDays bounds older_than_days so the cutoff cannot overflow int64 nanoseconds (I1).
+const maxCleanupDays = 100000
+
 func (h *handlers) getAdminStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.store.Stats(r.Context())
 	if err != nil {
@@ -64,6 +67,16 @@ func (h *handlers) adminCleanup(w http.ResponseWriter, r *http.Request) {
 	if !valid || days < 1 {
 		writeFieldError(w, http.StatusBadRequest, slugValidation,
 			"older_than_days must be a positive integer", "older_than_days")
+		return
+	}
+	// Upper bound (I1): without it, a huge older_than_days makes
+	// time.Duration(days)*24*time.Hour overflow int64 ns and wrap to a FUTURE cutoff, so the
+	// `updated_at < cutoff` filter would match — and delete — EVERY job. 100000 days (~274y) is
+	// far beyond any real retention and well under the ~106751-day overflow point. Reject (not
+	// silently clamp) so an operator typo surfaces instead of mass-deleting.
+	if days > maxCleanupDays {
+		writeFieldError(w, http.StatusBadRequest, slugValidation,
+			fmt.Sprintf("older_than_days must not exceed %d", maxCleanupDays), "older_than_days")
 		return
 	}
 

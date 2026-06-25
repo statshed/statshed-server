@@ -123,8 +123,11 @@ func (h *handlers) parseMultipart(w http.ResponseWriter, r *http.Request) (map[s
 		"job":    r.FormValue("job"),
 		"status": r.FormValue("status"),
 	}
-	if m := r.FormValue("message"); m != "" {
-		data["message"] = m
+	// Record message iff the field is PRESENT (even when empty), so the multipart path matches
+	// the JSON path and Python's request.form.get: present-empty -> "" (stored as ""), absent ->
+	// NULL (I12). r.FormValue could not distinguish present-empty from absent.
+	if vals, ok := r.MultipartForm.Value["message"]; ok && len(vals) > 0 {
+		data["message"] = vals[0]
 	}
 
 	file, _, err := r.FormFile("log")
@@ -229,25 +232,30 @@ func decodeLog(b []byte) string {
 	return string(runes)
 }
 
-// splitLinesKeepEnds splits s into lines keeping the terminators, like Python's
-// str.splitlines(keepends=True) for the common \n / \r\n / \r terminators: a trailing
-// terminator does NOT yield an extra empty final line.
+// splitLinesKeepEnds splits s into lines keeping the terminators, matching Python's
+// str.splitlines(keepends=True): it breaks on \n, \r and \r\n (as one terminator), and
+// ALSO on \v \f \x1c \x1d \x1e \u0085 (NEL) \u2028 (LINE SEP) \u2029 (PARA SEP) (I13).
+// \u0085/\u2028/\u2029 are multibyte in UTF-8, so we scan runes. A trailing terminator does
+// NOT yield an extra empty final line.
 func splitLinesKeepEnds(s string) []string {
 	var lines []string
 	start := 0
-	for i := 0; i < len(s); i++ {
-		switch s[i] {
-		case '\n':
-			lines = append(lines, s[start:i+1])
-			start = i + 1
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		switch r {
 		case '\r':
-			end := i + 1
-			if i+1 < len(s) && s[i+1] == '\n' {
-				end = i + 2
-				i++
+			end := i + size
+			if end < len(s) && s[end] == '\n' { // \r\n is a single terminator
+				end++
 			}
 			lines = append(lines, s[start:end])
-			start = end
+			i, start = end, end
+		case '\n', '\v', '\f', '\x1c', '\x1d', '\x1e', '\u0085', '\u2028', '\u2029':
+			end := i + size
+			lines = append(lines, s[start:end])
+			i, start = end, end
+		default:
+			i += size
 		}
 	}
 	if start < len(s) {

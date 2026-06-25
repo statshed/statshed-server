@@ -44,9 +44,10 @@ func (h *handlers) updateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	expirationChanged := false
-	var newExpiration int
-
+	// Validate ALL present fields BEFORE any write (I7): a later invalid field must not leave an
+	// earlier valid one persisted. The store then applies the collected values (and any
+	// expiration cascade) in a single transaction.
+	updates := make(map[string]int, len(configFields))
 	for _, f := range configFields {
 		raw, present := data[f.key]
 		if !present {
@@ -58,28 +59,12 @@ func (h *handlers) updateConfig(w http.ResponseWriter, r *http.Request) {
 				fmt.Sprintf("%s must be between %d and %d", f.key, f.min, f.max), f.key)
 			return
 		}
-		if f.key == "expiration_timeout_hours" {
-			old, err := h.store.ConfigValue(r.Context(), f.key, config.DefaultExpirationTimeoutHours)
-			if err != nil {
-				h.internalError(w, "read expiration config", err)
-				return
-			}
-			if value != old {
-				expirationChanged = true
-				newExpiration = value
-			}
-		}
-		if err := h.store.SetConfigValue(r.Context(), f.key, value); err != nil {
-			h.internalError(w, "set config", err)
-			return
-		}
+		updates[f.key] = value
 	}
 
-	if expirationChanged {
-		if err := h.store.CascadeGlobalExpiration(r.Context(), newExpiration); err != nil {
-			h.internalError(w, "cascade expiration", err)
-			return
-		}
+	if err := h.store.SetGlobalConfig(r.Context(), updates); err != nil {
+		h.internalError(w, "set config", err)
+		return
 	}
 
 	cv, err := h.store.Config(r.Context())

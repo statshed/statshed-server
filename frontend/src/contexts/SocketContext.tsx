@@ -45,8 +45,8 @@ export function SocketProvider({ children }: SocketProviderProps) {
 
     // AIDEV-NOTE: Distinguish the initial open from a reconnect. The initial open needs no
     // resync — the page's mount queries already fetch — but a RECONNECT must invalidate,
-    // because events emitted during the outage were missed and useGroups/useGroupJobs have
-    // no refetchInterval, so the dashboard would stay stale indefinitely.
+    // because events emitted during the outage were missed; without an immediate resync the
+    // dashboard would show stale data until the next 60s refetchInterval poll.
     let hasConnected = false
     // AIDEV-NOTE: hadError tracks whether the stream errored before its FIRST successful
     // open. If the app mounted during a backend/proxy outage, the mount queries may have
@@ -119,6 +119,10 @@ export function SocketProvider({ children }: SocketProviderProps) {
       on('health_update', () => {
         queryClient.invalidateQueries({ queryKey: queryKeys.health })
         queryClient.invalidateQueries({ queryKey: queryKeys.groups })
+        // The background worker emits health_update on timeout/stale transitions; invalidate
+        // jobs too so an open Jobs page (byStatus) reflects the new status without waiting for
+        // its 60s poll. groups already covers groupJobs via query-key prefix matching.
+        queryClient.invalidateQueries({ queryKey: queryKeys.jobs })
       })
 
       on<JobsAckedEvent>('jobs_acked', (data) => {

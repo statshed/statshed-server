@@ -23,10 +23,17 @@ func (s *Store) JobByID(ctx context.Context, id int) (Job, bool, error) {
 // MarkAcked acks a single job (idempotent: a no-op when already acked, so acked_at is not
 // re-stamped). It returns whether THIS call actually acked the row, so the caller only
 // emits jobs_acked when it really transitioned the job (a concurrent ack that wins the race
-// affects zero rows here). The caller is responsible for the unhealthy-status check.
+// affects zero rows here).
+//
+// The WHERE also gates on an unhealthy status (matching AckUnhealthy): this closes the TOCTOU
+// (I3) where a job recovers to success/progress — clearing its ack — between the handler's
+// status read and this UPDATE; without the gate it would re-ack a now-healthy job (a state
+// recovery is meant to prevent). The handler still does the user-facing IsUnhealthy check to
+// return a 400 for an already-healthy job; on a lost recovery race it re-reads the real state.
 func (s *Store) MarkAcked(ctx context.Context, id int, now time.Time) (bool, error) {
 	res, err := s.write.ExecContext(ctx,
-		"UPDATE jobs SET acked = 1, acked_at = ? WHERE id = ? AND acked = 0",
+		"UPDATE jobs SET acked = 1, acked_at = ? "+
+			"WHERE id = ? AND acked = 0 AND status IN ('error', 'timeout', 'stale')",
 		formatStored(now), id)
 	if err != nil {
 		return false, err

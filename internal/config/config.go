@@ -68,9 +68,19 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	// Fail fast on a non-positive limit (I6): a negative MAX_LOG_LINES would panic processLog's
+	// `lines[len(lines)-maxLines:]` slice on every log-bearing upload; <1 is never meaningful.
+	if maxLogLines < 1 {
+		return Config{}, fmt.Errorf("MAX_LOG_LINES must be >= 1, got %d", maxLogLines)
+	}
 	maxJobsPageSize, err := atoiEnv("MAX_JOBS_PAGE_SIZE", "500")
 	if err != nil {
 		return Config{}, err
+	}
+	// A non-positive page size would reach SQLite as LIMIT <=0; LIMIT -1 means "no limit",
+	// silently disabling pagination (I6).
+	if maxJobsPageSize < 1 {
+		return Config{}, fmt.Errorf("MAX_JOBS_PAGE_SIZE must be >= 1, got %d", maxJobsPageSize)
 	}
 	return Config{
 		Host:   getenv("HOST", "127.0.0.1"),

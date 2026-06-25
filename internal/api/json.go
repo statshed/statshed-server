@@ -5,7 +5,9 @@ import (
 	"errors"
 	"io"
 	"math"
+	"mime"
 	"net/http"
+	"strings"
 )
 
 // writeIfTooLarge writes the 413 payload_too_large envelope and returns true when err is
@@ -26,11 +28,36 @@ func writeBadJSON(w http.ResponseWriter) {
 	writeError(w, http.StatusBadRequest, slugBadRequest, "JSON object required")
 }
 
+// isJSONContentType reports whether ct is application/json or an application/*+json type
+// (ignoring parameters like charset). Empty/absent or any other type is rejected, matching
+// Flask's is_json used by get_json (I11).
+func isJSONContentType(ct string) bool {
+	if ct == "" {
+		return false
+	}
+	mt, _, err := mime.ParseMediaType(ct)
+	if err != nil {
+		return false
+	}
+	// application/json or an application/*+json structured-syntax suffix (e.g.
+	// application/problem+json); a non-application +json type like text/foo+json is rejected,
+	// matching Flask's Request.is_json.
+	return mt == "application/json" ||
+		(strings.HasPrefix(mt, "application/") && strings.HasSuffix(mt, "+json"))
+}
+
 // readJSONObject reads the body as a JSON object (any object, including empty). ok=false
 // (after writing a 400 bad_request, or 413 for an over-limit body) for malformed JSON or a
 // non-object. This is the lenient form used by admin cleanup, which validates required
 // fields rather than rejecting {} up front (Python's `data is None or not dict`).
 func readJSONObject(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
+	// Require a JSON Content-Type (I11): the Python server's get_json(silent=True) returned None
+	// -> 400 for a non-application/json body. Without this a valid JSON body sent as text/plain
+	// (or with no type) would be silently accepted and mutate state.
+	if !isJSONContentType(r.Header.Get("Content-Type")) {
+		writeBadJSON(w)
+		return nil, false
+	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		if writeIfTooLarge(w, err) {

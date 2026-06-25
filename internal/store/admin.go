@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"time"
 )
 
@@ -63,21 +64,41 @@ type CleanupResult struct {
 // cutoff, and removes any group whose entire job set was deleted (a group with some
 // surviving job is kept). When dryRun is true it only counts.
 func (s *Store) AdminCleanup(ctx context.Context, statuses []string, cutoff time.Time, dryRun bool) (CleanupResult, error) {
-	matchCond := "status IN (" + placeholders(len(statuses)) + ") AND updated_at < ?"
-	matchArgs := make([]any, 0, len(statuses)+1)
-	for _, st := range statuses {
-		matchArgs = append(matchArgs, st)
+	// Build the match predicate. An empty status set deletes nothing — parity with the Python
+	// server, where status.in_([]) renders a false predicate — which also avoids `status IN ()`.
+	var matchCond string
+	var matchArgs []any
+	if len(statuses) == 0 {
+		matchCond = "0 = 1"
+	} else {
+		matchCond = "status IN (" + placeholders(len(statuses)) + ") AND updated_at < ?"
+		matchArgs = make([]any, 0, len(statuses)+1)
+		for _, st := range statuses {
+			matchArgs = append(matchArgs, st)
+		}
+		matchArgs = append(matchArgs, formatStored(cutoff))
 	}
-	matchArgs = append(matchArgs, formatStored(cutoff))
+
+	// The count, the emptied-group computation, AND the deletes all run in ONE write
+	// transaction. The write handle is SetMaxOpenConns(1), so this is atomic vs. every other
+	// writer: it closes the I2 race where a concurrent POST /status adds a fresh job to a group
+	// between selection and deletion — previously the group could still appear in the
+	// emptied-set (read on s.read) and be deleted, dropping the new job via FK CASCADE. dryRun
+	// computes inside the tx too, then rolls back (no writes).
+	tx, err := s.write.BeginTx(ctx, nil)
+	if err != nil {
+		return CleanupResult{}, err
+	}
+	defer func() { _ = tx.Rollback() }() // no-op after Commit; the dryRun path relies on it
 
 	var deletedJobs int
-	if err := s.read.QueryRowContext(ctx,
+	if err := tx.QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM jobs WHERE "+matchCond, matchArgs...,
 	).Scan(&deletedJobs); err != nil {
 		return CleanupResult{}, err
 	}
 
-	emptyGroupIDs, err := s.emptiedGroupIDs(ctx, matchCond, matchArgs)
+	emptyGroupIDs, err := emptiedGroupIDs(ctx, tx, matchCond, matchArgs)
 	if err != nil {
 		return CleanupResult{}, err
 	}
@@ -87,11 +108,6 @@ func (s *Store) AdminCleanup(ctx context.Context, statuses []string, cutoff time
 		return result, nil
 	}
 
-	tx, err := s.write.BeginTx(ctx, nil)
-	if err != nil {
-		return CleanupResult{}, err
-	}
-	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, "DELETE FROM jobs WHERE "+matchCond, matchArgs...); err != nil {
 		return CleanupResult{}, err
 	}
@@ -113,10 +129,11 @@ func (s *Store) AdminCleanup(ctx context.Context, statuses []string, cutoff time
 }
 
 // emptiedGroupIDs returns the ids of groups whose every job matches matchCond (so the group
-// becomes empty once those jobs are deleted). Pre-existing zero-job groups are excluded
-// (they do not appear in the GROUP BY over jobs).
-func (s *Store) emptiedGroupIDs(ctx context.Context, matchCond string, matchArgs []any) ([]int, error) {
-	rows, err := s.read.QueryContext(ctx,
+// becomes empty once those jobs are deleted). Pre-existing zero-job groups are excluded (they
+// do not appear in the GROUP BY over jobs). It runs on the cleanup transaction so the result is
+// consistent with the deletes (I2).
+func emptiedGroupIDs(ctx context.Context, tx *sql.Tx, matchCond string, matchArgs []any) ([]int, error) {
+	rows, err := tx.QueryContext(ctx,
 		"SELECT group_id FROM jobs GROUP BY group_id "+
 			"HAVING COUNT(*) = SUM(CASE WHEN "+matchCond+" THEN 1 ELSE 0 END)",
 		matchArgs...)
