@@ -36,8 +36,7 @@ It's built for:
 > *collector* and *dashboard*. Run it **alongside** your real monitoring (Icinga, Nagios,
 > Prometheus, …) — not instead of it. See [What StatShed is — and isn't](#what-statshed-is--and-isnt).
 
-<!-- TODO(maintainers): add a current dashboard screenshot/GIF here. The committed
-     frontend/e2e/screenshots/*.png still show the old "StatDash" branding. -->
+![The StatShed dashboard: jobs grouped by source, each showing live status, with healthy and unhealthy counts at a glance.](docs/images/dashboard.png)
 
 ## Quick start
 
